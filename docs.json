@@ -3,9 +3,9 @@
   "theme": "linden",
   "name": "Blink",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#16A34A",
-    "dark": "#22C55E"
+    "primary": "#ffffff",
+    "light": "#111111",
+    "dark": "#ffffff"
   },
   "favicon": "/favicon.svg",
   "appearance": {
