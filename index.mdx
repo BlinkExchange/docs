@@ -28,22 +28,7 @@ Blink is a prediction market exchange where you trade binary outcome tokens on c
 - **24/7 binary markets** — UP/DOWN tokens on crypto assets, powered by Pyth oracles
 - **Automatic settlement** — on-chain via Base, no manual claims
 - **Zero fees** — no maker or taker fees during testnet
-- **Open SDKs** — Python and TypeScript clients, fully open source
-
-## Architecture
-
-```
-┌─────────────┐     ┌──────────────┐     ┌────────────┐
-│  Your Bot   │────▶│  Blink API   │────▶│  Matching  │
-│  (SDK)      │◀────│  (REST + WS) │◀────│  Engine    │
-└─────────────┘     └──────────────┘     └────────────┘
-                           │                    │
-                           ▼                    ▼
-                    ┌──────────────┐     ┌────────────┐
-                    │  Base Chain  │     │  Pyth      │
-                    │  (Settlement)│     │  (Prices)  │
-                    └──────────────┘     └────────────┘
-```
+- **Python SDK** — `pip install py-blink-client`, fully open source
 
 ## Contract Addresses (Base Sepolia Testnet)
 
@@ -57,5 +42,5 @@ Blink is a prediction market exchange where you trade binary outcome tokens on c
 ## Get Help
 
 - **API Base URL**: `https://api.blink15.com`
-- **Swagger UI**: [api.blink15.com/swagger-ui](https://api.blink15.com/swagger-ui/)
-- **GitHub**: [github.com/blink-markets](https://github.com/blink-markets)
+- **GitHub**: [github.com/BlinkExchange](https://github.com/BlinkExchange)
+- **Discord**: [discord.gg/Gs4qZ7tWnD](https://discord.gg/Gs4qZ7tWnD)

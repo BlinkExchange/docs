@@ -17,13 +17,7 @@ Token prices reflect the market's probability estimate. If UP trades at $0.65, t
 
 ## Market Lifecycle
 
-```
-┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
-│ Created  │───▶│  Active  │───▶│ Resolved │───▶│ Redeemed │
-│          │    │ (Trading)│    │ (Outcome)│    │ (Payout) │
-└──────────┘    └──────────┘    └──────────┘    └──────────┘
-                  Trading          Automatic       Automatic
-```
+**Created → Active → Resolved → Redeemed**
 
 1. **Created** — Market window scheduled
 2. **Active** — Trading open. Buy/sell YES and NO tokens.

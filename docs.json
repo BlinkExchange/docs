@@ -3,29 +3,13 @@
   "theme": "linden",
   "name": "Blink",
   "colors": {
-    "primary": "#22C55E",
-    "light": "#22C55E",
-    "dark": "#16A34A"
+    "primary": "#16A34A",
+    "light": "#16A34A",
+    "dark": "#22C55E"
   },
   "favicon": "/favicon.svg",
   "appearance": {
     "default": "dark"
-  },
-  "font": {
-    "body": {
-      "family": "Fira Code",
-      "url": "https://fonts.googleapis.com/css2?family=Fira+Code:wght@300..700&display=swap",
-      "weight": 400
-    },
-    "heading": {
-      "family": "Fira Code",
-      "url": "https://fonts.googleapis.com/css2?family=Fira+Code:wght@300..700&display=swap",
-      "weight": 600
-    },
-    "code": {
-      "family": "Fira Code",
-      "url": "https://fonts.googleapis.com/css2?family=Fira+Code:wght@300..700&display=swap"
-    }
   },
   "rounded": "none",
   "navigation": {
@@ -40,10 +24,6 @@
           {
             "group": "Python SDK",
             "pages": ["sdk/python-quickstart", "sdk/python-trading", "sdk/python-websocket"]
-          },
-          {
-            "group": "TypeScript SDK",
-            "pages": ["sdk/typescript"]
           },
           {
             "group": "Market Making",
