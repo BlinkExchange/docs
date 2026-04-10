@@ -6,13 +6,11 @@
     "primary": "#22C55E",
     "light": "#22C55E",
     "dark": "#16A34A",
-    "background": {
-      "dark": "#0b0b0b",
-      "light": "#f5f5f5"
-    }
   },
   "favicon": "/favicon.svg",
-  "appearance": "dark",
+  "appearance": {
+    "default": "dark"
+  },
   "font": {
     "body": {
       "family": "Fira Code",
