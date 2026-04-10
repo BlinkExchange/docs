@@ -1,0 +1,16 @@
+/* Match Blink website dimensions */
+:root {
+  --max-width: 1500px;
+}
+
+/* Widen the main content area */
+main > div,
+.max-w-prose,
+[class*="max-w-"] {
+  max-width: 1500px;
+}
+
+/* Widen the overall page container */
+.mx-auto {
+  max-width: 1500px;
+}
