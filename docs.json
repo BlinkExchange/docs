@@ -1,13 +1,35 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "maple",
+  "theme": "venus",
   "name": "Blink",
   "colors": {
-    "primary": "#16A34A",
+    "primary": "#22C55E",
     "light": "#22C55E",
-    "dark": "#15803D"
+    "dark": "#16A34A",
+    "background": {
+      "dark": "#0b0b0b",
+      "light": "#f5f5f5"
+    }
   },
   "favicon": "/favicon.svg",
+  "appearance": "dark",
+  "font": {
+    "body": {
+      "family": "Fira Code",
+      "url": "https://fonts.googleapis.com/css2?family=Fira+Code:wght@300..700&display=swap",
+      "weight": 400
+    },
+    "heading": {
+      "family": "Fira Code",
+      "url": "https://fonts.googleapis.com/css2?family=Fira+Code:wght@300..700&display=swap",
+      "weight": 600
+    },
+    "code": {
+      "family": "Fira Code",
+      "url": "https://fonts.googleapis.com/css2?family=Fira+Code:wght@300..700&display=swap"
+    }
+  },
+  "rounded": "none",
   "navigation": {
     "tabs": [
       {
@@ -52,7 +74,8 @@
   },
   "footer": {
     "socials": {
-      "github": "https://github.com/blink-markets"
+      "github": "https://github.com/BlinkExchange",
+      "discord": "https://discord.gg/blink"
     }
   },
   "api": {
@@ -62,4 +85,3 @@
     }
   }
 }
-
