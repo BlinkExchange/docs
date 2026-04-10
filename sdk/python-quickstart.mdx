@@ -1,0 +1,119 @@
+---
+title: "Python SDK"
+description: "Install and configure py-blink-client for trading on Blink"
+---
+
+## Installation
+
+```bash
+pip install py-blink-client
+```
+
+Or from source:
+
+```bash
+git clone https://github.com/blink-markets/py-blink-client
+cd py-blink-client
+pip install -e .
+```
+
+### Requirements
+
+- Python 3.10+
+- `eth-account` (EIP-712 signing)
+- `requests` (HTTP)
+- `websockets` (real-time data)
+
+## Connect and Authenticate
+
+```python
+from py_blink_client import ClobClient
+
+# Public data only (no auth needed)
+client = ClobClient(host="https://api.blink15.com")
+
+# Trading (requires wallet private key)
+client = ClobClient(
+    host="https://api.blink15.com",
+    key="0xYOUR_PRIVATE_KEY",
+)
+
+# Create API credentials (one-time — cached on the client)
+creds = client.create_or_derive_api_creds()
+print(f"API Key: {creds.api_key}")
+```
+
+<Warning>
+Your private key never leaves your machine. It's only used locally to sign an EIP-712 message that proves wallet ownership.
+</Warning>
+
+## How Auth Works
+
+Blink uses two auth levels (same as Polymarket):
+
+**Level 1 — EIP-712 (one-time setup)**
+
+Your wallet signs a typed data message to create API credentials. This happens once when you call `create_or_derive_api_creds()`.
+
+**Level 2 — HMAC-SHA256 (every request)**
+
+All trading requests are signed with HMAC. The SDK handles this automatically after credentials are created.
+
+```python
+# After create_or_derive_api_creds(), all calls use HMAC auth
+orders = client.get_orders()              # authenticated
+client.create_and_post_order(...)         # authenticated
+client.cancel(...)                        # authenticated
+```
+
+## Configuration
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `host` | `https://api.blink15.com` | API base URL |
+| `key` | `None` | Wallet private key (hex string with 0x prefix) |
+| `chain_id` | `84532` | Base Sepolia chain ID |
+
+## Error Handling
+
+The SDK raises `BlinkApiError` for HTTP errors and `BlinkAuthError` for authentication failures:
+
+```python
+from py_blink_client import BlinkApiError, BlinkAuthError
+
+try:
+    order = client.create_and_post_order(args)
+except BlinkAuthError as e:
+    print(f"Auth failed: {e}")  # expired or invalid credentials
+except BlinkApiError as e:
+    print(f"API error {e.status_code}: {e.response_body}")
+```
+
+The SDK automatically retries on 5xx errors (3 attempts with exponential backoff).
+
+## Testnet Faucet
+
+Get free USDC on Base Sepolia:
+
+```python
+# Mint 100 USDC
+result = client.claim_faucet("0xYourWalletAddress")
+print(f"TX: {result['tx_hash']}")
+
+# Gas-free USDC approval
+client.relay_permit(owner, spender, value, deadline, v, r, s)
+
+# Sponsor ETH for CTF token approval
+client.prefund_ctf_approval("0xYourWalletAddress")
+```
+
+## What's Next
+
+<CardGroup cols={2}>
+  <Card title="Trading" icon="arrows-rotate" href="/sdk/python-trading">
+    Place orders, batch operations, order types
+  </Card>
+  <Card title="WebSocket Streams" icon="bolt" href="/sdk/python-websocket">
+    Real-time orderbook, fills, price ticks
+  </Card>
+</CardGroup>

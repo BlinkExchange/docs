@@ -1,0 +1,129 @@
+---
+title: "Core Concepts"
+description: "How prediction markets, binary tokens, and settlement work on Blink"
+---
+
+## Binary Prediction Markets
+
+Blink runs prediction markets on crypto price movements using Pyth oracle feeds. Each market is a simple question:
+
+> "Will BTC's price be **higher** or **lower** at the end of this market window than it was at the start?"
+
+Two outcome tokens are created for each market:
+- **YES token** (UP) — pays $1.00 if the price closes higher
+- **NO token** (DOWN) — pays $1.00 if the price closes lower
+
+Token prices reflect the market's probability estimate. If UP trades at $0.65, the market thinks there's a ~65% chance the stock goes up.
+
+## Market Lifecycle
+
+```
+┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
+│ Created  │───▶│  Active  │───▶│ Resolved │───▶│ Redeemed │
+│          │    │ (Trading)│    │ (Outcome)│    │ (Payout) │
+└──────────┘    └──────────┘    └──────────┘    └──────────┘
+                  Trading          Automatic       Automatic
+```
+
+1. **Created** — Market window scheduled
+2. **Active** — Trading open. Buy/sell YES and NO tokens.
+3. **Resolved** — Window closes. Pyth oracle determines outcome.
+4. **Redeemed** — Winning tokens automatically redeemed for $1.00 USDC each.
+
+## Token Pricing
+
+Prices are always between $0.01 and $0.99:
+
+| YES Price | NO Price | Market View |
+|-----------|----------|-------------|
+| $0.80 | $0.20 | 80% probability price goes up |
+| $0.50 | $0.50 | Equal probability (coin flip) |
+| $0.30 | $0.70 | 70% probability price goes down |
+
+YES + NO always sums to ~$1.00 (minus spread). This is enforced by the MINT/MERGE mechanism:
+- **MINT**: Buy YES at $0.60 + Buy NO at $0.40 = $1.00 → 1 YES + 1 NO minted
+- **MERGE**: Sell YES at $0.60 + Sell NO at $0.40 = 1 YES + 1 NO burned → $1.00 returned
+
+## Order Types
+
+| Type | Behavior |
+|------|----------|
+| **GTC** (Good Till Cancel) | Rests on the book until filled or cancelled. Default. |
+| **GTD** (Good Till Date) | Rests until the specified expiration time. |
+| **FOK** (Fill or Kill) | Must fill entirely or is rejected. No partial fills. |
+| **IOC / FAK** (Immediate or Cancel) | Fills what it can immediately, cancels the rest. Called `FAK` in the Python SDK. |
+
+**Post-only**: Add `post_only=True` to reject orders that would match immediately. Useful for market makers who want to provide liquidity, not take it.
+
+## Amount Encoding
+
+All amounts use 6 decimal places internally (matching USDC's 6 decimals):
+
+| Human Value | Raw Value | Meaning |
+|-------------|-----------|---------|
+| 1 USDC | 1,000,000 | One dollar |
+| 100 tokens | 100,000,000 | One hundred contracts |
+| $0.50 | 500,000 | Fifty cents |
+
+**The SDK handles all conversions.** Pass human-readable numbers (`price=0.50`, `size=20`) and the SDK converts to raw amounts.
+
+For BUY orders:
+- `makerAmount` = size × price × 1,000,000 (USDC you pay)
+- `takerAmount` = size × 1,000,000 (tokens you receive)
+
+For SELL orders:
+- `makerAmount` = size × 1,000,000 (tokens you give)
+- `takerAmount` = size × price × 1,000,000 (USDC you receive)
+
+## Authentication
+
+Blink uses the same two-level auth as Polymarket:
+
+### Level 1 — EIP-712 (Wallet Proof)
+
+Used once to create API credentials. Your wallet signs a typed data message proving ownership. The private key never leaves your machine.
+
+### Level 2 — HMAC-SHA256 (Trading)
+
+Used for every trading request. Four headers are required:
+
+| Header | Value |
+|--------|-------|
+| `BLINK-API-KEY` | UUID from credential creation |
+| `BLINK-SIGNATURE` | HMAC-SHA256 of `{timestamp}{METHOD}{path}{body}`, URL-safe base64 encoded |
+| `BLINK-TIMESTAMP` | Unix seconds |
+| `BLINK-PASSPHRASE` | Passphrase from credential creation |
+
+The SDK handles all signing automatically.
+
+## Settlement
+
+Every matched trade is settled on-chain via the Base network:
+
+1. Order matches in the matching engine (~1ms)
+2. Settlement TX submitted to Base (~100ms)
+3. TX confirmed on-chain (~2 seconds)
+4. CTF tokens minted/transferred to wallets
+5. Activity feed updated with on-chain TX hash
+
+Settlement is fully automatic. You don't need to claim or withdraw — tokens appear in your wallet.
+
+## Resolution and Redemption
+
+When a market's window closes:
+
+1. **Pyth oracle** provides the closing price
+2. **Adapter contract** compares open vs close price → determines UP or DOWN outcome
+3. **CTF contract** sets payout ratios (winning side = $1.00, losing side = $0.00)
+4. **Auto-redemption** burns winning tokens and sends USDC to holders
+5. All happens typically within 30–60 seconds of market close
+
+## WebSocket Channels
+
+Three real-time channels for different use cases:
+
+| Channel | URL | Auth | Use Case |
+|---------|-----|------|----------|
+| `/ws/market` | Public | None | Orderbook snapshots, trades, market events |
+| `/ws/price` | Public | None | Pyth oracle price ticks |
+| `/ws/user` | Private | API creds | Fills, cancels, balance updates, positions |

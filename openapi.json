@@ -1,0 +1,2557 @@
+{
+    "openapi": "3.0.3",
+    "info": {
+        "title": "Blink Markets API",
+        "description": "Trading API for Blink Prediction Markets",
+        "contact": {
+            "name": "Blink",
+            "url": "https://blink15.com"
+        },
+        "license": {
+            "name": "Proprietary",
+            "url": "https://blink15.com/terms"
+        },
+        "version": "1.0.0"
+    },
+    "servers": [
+        {
+            "url": "https://api.blink15.com",
+            "description": "Production (Base Sepolia Testnet)"
+        },
+        {
+            "url": "http://localhost:3001",
+            "description": "Local Development"
+        }
+    ],
+    "paths": {
+        "/": {
+            "get": {
+                "tags": [
+                    "health"
+                ],
+                "summary": "Health check - GET /",
+                "operationId": "get_ok",
+                "responses": {
+                    "200": {
+                        "description": "Returns OK string",
+                        "content": {
+                            "text/plain": {
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/api-key": {
+            "post": {
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Create new API credentials (L1 EIP-712 auth)",
+                "description": "POST /auth/api-key\n\nHeaders:\n- BLINK-ADDRESS: Wallet address\n- BLINK-SIGNATURE: EIP-712 signature\n- BLINK-TIMESTAMP: Unix timestamp\n- BLINK-NONCE: Random nonce",
+                "operationId": "create_api_key",
+                "responses": {
+                    "200": {
+                        "description": "API credentials created",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiCredentialsResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Invalid signature"
+                    }
+                }
+            }
+        },
+        "/auth/derive-api-key": {
+            "get": {
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Derive existing API credentials (L1 EIP-712 auth)",
+                "description": "GET /auth/derive-api-key\n\nIf credentials exist, returns them. Otherwise returns 404.\npy-clob-client's create_or_derive_api_creds() tries this first,\nthen falls back to POST /auth/api-key if not found.",
+                "operationId": "derive_api_key",
+                "responses": {
+                    "200": {
+                        "description": "Existing API credentials",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiCredentialsResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Invalid L1 EIP-712 signature"
+                    },
+                    "404": {
+                        "description": "No valid credentials found for this wallet"
+                    }
+                }
+            }
+        },
+        "/balance-allowance": {
+            "get": {
+                "tags": [
+                    "account"
+                ],
+                "summary": "Get balance and allowance for a user - GET /balance-allowance",
+                "description": "Query params:\n- asset_type: \"COLLATERAL\" (USDC) or \"CONDITIONAL\" (CTF tokens)\n- token_id: Required for CONDITIONAL type, the token ID to check",
+                "operationId": "get_balance_allowance",
+                "parameters": [
+                    {
+                        "name": "asset_type",
+                        "in": "query",
+                        "description": "Asset type: COLLATERAL or CONDITIONAL",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "token_id",
+                        "in": "query",
+                        "description": "Token ID (required for CONDITIONAL)",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "nullable": true
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Balance and allowance for the asset",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/BalanceAllowanceResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid asset_type or missing token_id"
+                    },
+                    "401": {
+                        "description": "HMAC authentication failed"
+                    }
+                },
+                "security": [
+                    {
+                        "hmac_signature": []
+                    }
+                ]
+            }
+        },
+        "/book": {
+            "get": {
+                "tags": [
+                    "market-data"
+                ],
+                "operationId": "get_book",
+                "parameters": [
+                    {
+                        "name": "token_id",
+                        "in": "query",
+                        "description": "Token ID (hex or decimal)",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Orderbook with bids, asks, and metadata",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/BookResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "No market found for token"
+                    }
+                }
+            }
+        },
+        "/book/unified": {
+            "get": {
+                "tags": [
+                    "market-data"
+                ],
+                "summary": "Get unified orderbook - GET /book/unified",
+                "description": "Returns both direct and implied liquidity (from cross-book MINT/MERGE opportunities)\nwith visual distinction between sources.",
+                "operationId": "get_unified_book",
+                "parameters": [
+                    {
+                        "name": "token_id",
+                        "in": "query",
+                        "description": "Token ID (hex or decimal)",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Unified orderbook with direct and implied liquidity",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UnifiedBookResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "No market found for token"
+                    }
+                }
+            }
+        },
+        "/cancel-all": {
+            "delete": {
+                "tags": [
+                    "trading"
+                ],
+                "operationId": "cancel_all",
+                "responses": {
+                    "200": {
+                        "description": "Cancel result with canceled/not_canceled arrays",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CancelAllResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "HMAC authentication failed"
+                    }
+                },
+                "security": [
+                    {
+                        "hmac_signature": []
+                    }
+                ]
+            }
+        },
+        "/data/order/{id}": {
+            "get": {
+                "tags": [
+                    "trading"
+                ],
+                "summary": "Get single order - GET /data/order/:id",
+                "operationId": "get_order",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "Order UUID",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Single order details",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/OrderInfo"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Order not found"
+                    }
+                },
+                "security": [
+                    {
+                        "hmac_signature": []
+                    }
+                ]
+            }
+        },
+        "/data/orders": {
+            "get": {
+                "tags": [
+                    "trading"
+                ],
+                "operationId": "get_orders",
+                "responses": {
+                    "200": {
+                        "description": "User's open orders with pagination cursor",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/OrdersResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "HMAC authentication failed"
+                    }
+                },
+                "security": [
+                    {
+                        "hmac_signature": []
+                    }
+                ]
+            }
+        },
+        "/data/trades": {
+            "get": {
+                "tags": [
+                    "trading"
+                ],
+                "operationId": "get_trades",
+                "responses": {
+                    "200": {
+                        "description": "User's trade history with pagination cursor",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TradesResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "HMAC authentication failed"
+                    }
+                },
+                "security": [
+                    {
+                        "hmac_signature": []
+                    }
+                ]
+            }
+        },
+        "/faucet/claim": {
+            "post": {
+                "tags": [
+                    "faucet"
+                ],
+                "summary": "POST /faucet/claim \u2014 mint TestUSDC to a user address",
+                "operationId": "claim_usdc",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ClaimRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "USDC minted successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ClaimResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid address or rate limited"
+                    },
+                    "500": {
+                        "description": "Mint transaction failed"
+                    }
+                }
+            }
+        },
+        "/health": {
+            "get": {
+                "tags": [
+                    "health"
+                ],
+                "summary": "Liveness probe - just checks if the process is running",
+                "description": "GET /health\n\nReturns 200 if the process is alive, 503 if not.\nThis is a lightweight check that doesn't verify dependencies.",
+                "operationId": "health_check",
+                "responses": {
+                    "200": {
+                        "description": "Service is alive",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SimpleHealthResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/health/ready": {
+            "get": {
+                "tags": [
+                    "health"
+                ],
+                "summary": "Readiness probe - checks if the service can handle traffic",
+                "description": "GET /health/ready\n\nReturns 200 if ready to serve traffic, 503 if not.\nChecks critical dependencies: database, blockchain RPC.",
+                "operationId": "readiness_check",
+                "responses": {
+                    "200": {
+                        "description": "Service is ready",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SimpleHealthResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service is not ready",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SimpleHealthResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/last-trade-price": {
+            "get": {
+                "tags": [
+                    "market-data"
+                ],
+                "operationId": "get_last_trade_price",
+                "parameters": [
+                    {
+                        "name": "token_id",
+                        "in": "query",
+                        "description": "Token ID (hex or decimal)",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Most recent trade price for the token",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/LastTradePriceResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/markets": {
+            "get": {
+                "tags": [
+                    "markets"
+                ],
+                "summary": "List markets",
+                "operationId": "list_markets",
+                "parameters": [
+                    {
+                        "name": "symbol",
+                        "in": "query",
+                        "description": "Filter by symbol (e.g. AAPLX)",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "nullable": true
+                        }
+                    },
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "description": "Filter by status (e.g. active, all)",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "nullable": true
+                        }
+                    },
+                    {
+                        "name": "include_resolved",
+                        "in": "query",
+                        "description": "Set to \"true\" to include resolved markets (default: active only)",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "nullable": true
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of markets",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MarketsListResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/markets/{id}": {
+            "get": {
+                "tags": [
+                    "markets"
+                ],
+                "summary": "Get market by ID",
+                "operationId": "get_market",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "Market UUID",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Market details",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MarketResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Market not found"
+                    }
+                }
+            }
+        },
+        "/markets/{id}/orderbook": {
+            "get": {
+                "tags": [
+                    "markets"
+                ],
+                "summary": "Get order book for a market",
+                "description": "Query params:\n- `token_id`: Optional hex string (no 0x prefix). Defaults to YES token.\n\nExamples:\n- `GET /markets/:id/orderbook` \u2192 YES token orderbook\n- `GET /markets/:id/orderbook?token_id=<hex>` \u2192 Specific token orderbook",
+                "operationId": "get_orderbook",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "Market UUID",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "token_id",
+                        "in": "query",
+                        "description": "Optional token_id (hex string, no 0x prefix). Defaults to YES token.",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "nullable": true
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Orderbook snapshot",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/OrderBookResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Market not found"
+                    }
+                }
+            }
+        },
+        "/midpoint": {
+            "get": {
+                "tags": [
+                    "market-data"
+                ],
+                "operationId": "get_midpoint",
+                "parameters": [
+                    {
+                        "name": "token_id",
+                        "in": "query",
+                        "description": "Token ID (hex or decimal)",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Midpoint price between best bid and ask",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MidpointResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "No market found for token"
+                    }
+                }
+            }
+        },
+        "/order": {
+            "delete": {
+                "tags": [
+                    "trading"
+                ],
+                "summary": "Cancel order - DELETE /order",
+                "description": "Accepts both:\n- JSON body: {\"orderID\": \"...\"} or {\"order_id\": \"...\"} (Polymarket client)\n- Query param: ?order_id=... (backward compatibility)",
+                "operationId": "cancel_order",
+                "requestBody": {
+                    "description": "Order ID to cancel",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CancelOrderBody"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "Cancel result with canceled/not_canceled arrays"
+                    },
+                    "400": {
+                        "description": "Invalid order_id format"
+                    },
+                    "401": {
+                        "description": "HMAC authentication failed"
+                    }
+                },
+                "security": [
+                    {
+                        "hmac_signature": []
+                    }
+                ]
+            }
+        },
+        "/orders": {
+            "get": {
+                "tags": [
+                    "orders"
+                ],
+                "summary": "List orders with filters",
+                "operationId": "list_orders",
+                "parameters": [
+                    {
+                        "name": "market_id",
+                        "in": "query",
+                        "description": "Filter by market",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "nullable": true
+                        }
+                    },
+                    {
+                        "name": "maker",
+                        "in": "query",
+                        "description": "Filter by maker address",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "nullable": true
+                        }
+                    },
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "description": "Filter by order status",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "nullable": true
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "description": "Maximum number of orders to return",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int64",
+                            "nullable": true
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of orders"
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "orders"
+                ],
+                "summary": "Submit a signed order",
+                "operationId": "submit_order",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/crate.domain.SubmitOrderRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "Order submitted successfully"
+                    },
+                    "400": {
+                        "description": "Invalid order data"
+                    },
+                    "401": {
+                        "description": "Invalid signature"
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "trading"
+                ],
+                "summary": "Cancel multiple orders by ID - DELETE /orders",
+                "description": "SDK sends JSON array of order ID strings: [\"id1\", \"id2\", ...]",
+                "operationId": "cancel_orders",
+                "requestBody": {
+                    "description": "Array of order ID strings to cancel",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "Cancel result with canceled/not_canceled arrays"
+                    },
+                    "401": {
+                        "description": "HMAC authentication failed"
+                    }
+                },
+                "security": [
+                    {
+                        "hmac_signature": []
+                    }
+                ]
+            }
+        },
+        "/orders/{id}": {
+            "get": {
+                "tags": [
+                    "orders"
+                ],
+                "summary": "Get order by ID",
+                "operationId": "get_order",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "Order ID",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Order found"
+                    },
+                    "404": {
+                        "description": "Order not found"
+                    }
+                }
+            }
+        },
+        "/price": {
+            "get": {
+                "tags": [
+                    "market-data"
+                ],
+                "operationId": "get_price",
+                "parameters": [
+                    {
+                        "name": "token_id",
+                        "in": "query",
+                        "description": "Token ID (hex or decimal)",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "side",
+                        "in": "query",
+                        "description": "Order side: BUY or SELL",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Best price for the given side",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PriceResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "No market found for token"
+                    }
+                }
+            }
+        },
+        "/spread": {
+            "get": {
+                "tags": [
+                    "market-data"
+                ],
+                "operationId": "get_spread",
+                "parameters": [
+                    {
+                        "name": "token_id",
+                        "in": "query",
+                        "description": "Token ID (hex or decimal)",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Spread between best bid and ask",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SpreadResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "No market found for token"
+                    }
+                }
+            }
+        },
+        "/tick-size": {
+            "get": {
+                "tags": [
+                    "market-data"
+                ],
+                "operationId": "get_tick_size",
+                "parameters": [
+                    {
+                        "name": "token_id",
+                        "in": "query",
+                        "description": "Token ID (hex or decimal)",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Minimum tick size and order size",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TickSizeResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/time": {
+            "get": {
+                "tags": [
+                    "health"
+                ],
+                "operationId": "get_time",
+                "responses": {
+                    "200": {
+                        "description": "Current server time as Unix seconds",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TimeResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/users/{address}": {
+            "get": {
+                "tags": [
+                    "users"
+                ],
+                "summary": "Get user profile summary (public)",
+                "description": "GET /users/:address",
+                "operationId": "get_profile",
+                "parameters": [
+                    {
+                        "name": "address",
+                        "in": "path",
+                        "description": "User wallet address",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "User profile",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UserProfileResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "User not found"
+                    }
+                }
+            }
+        },
+        "/users/{address}/activity": {
+            "get": {
+                "tags": [
+                    "users"
+                ],
+                "summary": "GET /users/:address/activity \u2014 unified activity feed",
+                "operationId": "get_activity",
+                "parameters": [
+                    {
+                        "name": "address",
+                        "in": "path",
+                        "description": "User wallet address",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "description": "Maximum number of results (default 50, max 200)",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int64",
+                            "nullable": true
+                        }
+                    },
+                    {
+                        "name": "offset",
+                        "in": "query",
+                        "description": "Offset for pagination (default 0)",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int64",
+                            "nullable": true
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Unified activity feed",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/users/{address}/history": {
+            "get": {
+                "tags": [
+                    "users"
+                ],
+                "summary": "Get user's on-chain history from blockchain indexer",
+                "description": "Returns all indexed on-chain events (fills, transfers, redemptions) for a user.\nThis is the authoritative history \u2014 derived directly from blockchain events.\n\nGET /users/:address/history",
+                "operationId": "get_history",
+                "parameters": [
+                    {
+                        "name": "address",
+                        "in": "path",
+                        "description": "User wallet address",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "On-chain event history",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/users/{address}/orders": {
+            "get": {
+                "tags": [
+                    "users"
+                ],
+                "summary": "Get user orders from DATABASE (our matching engine state)",
+                "description": "Orders are off-chain until matched, so we query our database.\n\nGET /users/:address/orders",
+                "operationId": "get_orders",
+                "parameters": [
+                    {
+                        "name": "address",
+                        "in": "path",
+                        "description": "User wallet address",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "User orders",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/OrdersResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/users/{address}/portfolio-history": {
+            "get": {
+                "tags": [
+                    "users"
+                ],
+                "summary": "GET /users/:address/portfolio-history \u2014 portfolio milestones for frontend chart",
+                "description": "Returns position-changing events (buy/sell/mint/redemption) with running USDC balance.\nThe frontend combines these milestones with live position valuations to render\na smooth portfolio chart.",
+                "operationId": "get_portfolio_history",
+                "parameters": [
+                    {
+                        "name": "address",
+                        "in": "path",
+                        "description": "User wallet address",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Portfolio value milestones for charting",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/users/{address}/positions": {
+            "get": {
+                "tags": [
+                    "users"
+                ],
+                "summary": "GET /users/:address/positions \u2014 on-chain CTF token balances for active markets.",
+                "description": "Returns non-zero positions only. Public endpoint (on-chain data).\nUses the existing ctf_balance_cache (5s TTL) to avoid redundant RPC calls.",
+                "operationId": "get_positions",
+                "parameters": [
+                    {
+                        "name": "address",
+                        "in": "path",
+                        "description": "User wallet address",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "CTF token positions for active markets",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/users/{address}/redemptions": {
+            "get": {
+                "tags": [
+                    "users"
+                ],
+                "summary": "Get user redemption history from DATABASE",
+                "description": "Returns redemptions based on settled trades for resolved markets.\nWe track settlements in our DB.\n\nGET /users/:address/redemptions",
+                "operationId": "get_redemptions",
+                "parameters": [
+                    {
+                        "name": "address",
+                        "in": "path",
+                        "description": "User wallet address",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "User redemption history",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/RedemptionsHistoryResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/users/{address}/trades": {
+            "get": {
+                "tags": [
+                    "users"
+                ],
+                "summary": "Get user trades from DATABASE (our matching engine history)",
+                "description": "GET /users/:address/trades",
+                "operationId": "get_trades",
+                "parameters": [
+                    {
+                        "name": "address",
+                        "in": "path",
+                        "description": "User wallet address",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "User trades",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TradesResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/permit": {
+            "post": {
+                "tags": [
+                    "faucet"
+                ],
+                "summary": "POST /v1/permit \u2014 relay a signed EIP-2612 permit to set USDC allowance",
+                "description": "The user signs the permit off-chain (no gas). This endpoint submits it\non-chain using the operator/faucet wallet (which pays gas).\nThis enables gasless USDC approvals for users.",
+                "operationId": "relay_permit",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PermitRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "Permit relayed successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PermitResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid parameters or spender not exchange contract"
+                    },
+                    "500": {
+                        "description": "Permit transaction failed"
+                    }
+                }
+            }
+        },
+        "/v1/prefund-ctf-approval": {
+            "post": {
+                "tags": [
+                    "faucet"
+                ],
+                "summary": "POST /v1/prefund-ctf-approval \u2014 sponsor ETH so user can call setApprovalForAll",
+                "description": "1. Check if CTF is already approved \u2192 return early\n2. Check if user has enough ETH \u2192 return early\n3. Send ETH from faucet wallet, wait for receipt\n4. Return confirmation so frontend can immediately send the approval TX",
+                "operationId": "prefund_ctf_approval",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PrefundRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "Prefund result (may already be approved or funded)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PrefundResponse"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limited \u2014 1 prefund per address per 24 hours"
+                    },
+                    "500": {
+                        "description": "ETH transfer failed"
+                    }
+                }
+            }
+        },
+        "/wallet-status": {
+            "get": {
+                "tags": [
+                    "account"
+                ],
+                "summary": "GET /wallet-status?address=0x...",
+                "description": "Returns USDC balance, USDC allowance (for exchange), and CTF approval status\nfor the given wallet address. All values are publicly readable on-chain, so\nno authentication is required.\n\nBackend caches these with 5s TTL, eliminating redundant RPC calls when\nmultiple browser tabs or users query the same address.",
+                "operationId": "get_wallet_status",
+                "parameters": [
+                    {
+                        "name": "address",
+                        "in": "query",
+                        "description": "Wallet address (0x-prefixed)",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Wallet USDC balance, allowance, CTF approval, and ETH balance",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/WalletStatusResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid wallet address"
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "ApiCredentialsResponse": {
+                "type": "object",
+                "description": "Response for API key creation/derivation",
+                "required": [
+                    "api_key",
+                    "secret",
+                    "passphrase"
+                ],
+                "properties": {
+                    "api_key": {
+                        "type": "string"
+                    },
+                    "passphrase": {
+                        "type": "string"
+                    },
+                    "secret": {
+                        "type": "string"
+                    }
+                }
+            },
+            "ApiKeyResponse": {
+                "type": "object",
+                "description": "API key creation response",
+                "required": [
+                    "api_key",
+                    "api_secret",
+                    "passphrase",
+                    "expires_at"
+                ],
+                "properties": {
+                    "api_key": {
+                        "type": "string",
+                        "description": "API key (show only once)"
+                    },
+                    "api_secret": {
+                        "type": "string",
+                        "description": "API secret (show only once)"
+                    },
+                    "expires_at": {
+                        "type": "string",
+                        "description": "Key expiration date"
+                    },
+                    "passphrase": {
+                        "type": "string",
+                        "description": "Passphrase for additional security"
+                    }
+                }
+            },
+            "BalanceAllowanceResponse": {
+                "type": "object",
+                "description": "Response for balance-allowance endpoint",
+                "required": [
+                    "balance",
+                    "allowance"
+                ],
+                "properties": {
+                    "allowance": {
+                        "type": "string"
+                    },
+                    "balance": {
+                        "type": "string"
+                    }
+                }
+            },
+            "BalanceResponse": {
+                "type": "object",
+                "description": "User balance response",
+                "required": [
+                    "wallet_address",
+                    "usdc_balance",
+                    "positions"
+                ],
+                "properties": {
+                    "positions": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/PositionInfo"
+                        },
+                        "description": "Token positions"
+                    },
+                    "usdc_balance": {
+                        "type": "string",
+                        "description": "USDC balance"
+                    },
+                    "wallet_address": {
+                        "type": "string",
+                        "description": "Wallet address"
+                    }
+                }
+            },
+            "BookResponse": {
+                "type": "object",
+                "description": "Get orderbook - GET /book\nPolymarket-compatible response with all expected fields",
+                "required": [
+                    "market",
+                    "asset_id",
+                    "bids",
+                    "asks",
+                    "timestamp",
+                    "min_order_size",
+                    "neg_risk",
+                    "tick_size"
+                ],
+                "properties": {
+                    "asks": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/PriceLevel"
+                        }
+                    },
+                    "asset_id": {
+                        "type": "string"
+                    },
+                    "bids": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/PriceLevel"
+                        }
+                    },
+                    "hash": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "last_trade_price": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "market": {
+                        "type": "string"
+                    },
+                    "min_order_size": {
+                        "type": "string"
+                    },
+                    "neg_risk": {
+                        "type": "boolean"
+                    },
+                    "tick_size": {
+                        "type": "string"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "description": "Polymarket-required fields"
+                    }
+                }
+            },
+            "CancelAllResponse": {
+                "type": "object",
+                "description": "Cancel all orders - DELETE /cancel-all",
+                "required": [
+                    "canceled",
+                    "not_canceled"
+                ],
+                "properties": {
+                    "canceled": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "not_canceled": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "CancelOrderBody": {
+                "type": "object",
+                "description": "Cancel order body (Polymarket client sends JSON body)",
+                "required": [
+                    "order_id"
+                ],
+                "properties": {
+                    "order_id": {
+                        "type": "string"
+                    }
+                }
+            },
+            "CreateOrderRequest": {
+                "type": "object",
+                "description": "Order creation request",
+                "required": [
+                    "condition_id",
+                    "token_id",
+                    "side",
+                    "size",
+                    "signature",
+                    "order"
+                ],
+                "properties": {
+                    "condition_id": {
+                        "type": "string",
+                        "description": "Market condition ID"
+                    },
+                    "order": {
+                        "description": "Signed order data"
+                    },
+                    "price": {
+                        "type": "string",
+                        "description": "Limit price (required for limit orders)",
+                        "nullable": true
+                    },
+                    "side": {
+                        "$ref": "#/components/schemas/OrderSide"
+                    },
+                    "signature": {
+                        "type": "string",
+                        "description": "EIP-712 signature"
+                    },
+                    "size": {
+                        "type": "string",
+                        "description": "Order size"
+                    },
+                    "time_in_force": {
+                        "$ref": "#/components/schemas/TimeInForce"
+                    },
+                    "token_id": {
+                        "type": "string",
+                        "description": "Token ID to trade"
+                    }
+                }
+            },
+            "ErrorResponse": {
+                "type": "object",
+                "description": "API error response",
+                "required": [
+                    "code",
+                    "message"
+                ],
+                "properties": {
+                    "code": {
+                        "type": "string",
+                        "description": "Error code",
+                        "example": "INVALID_ORDER"
+                    },
+                    "details": {
+                        "description": "Additional error details",
+                        "nullable": true
+                    },
+                    "message": {
+                        "type": "string",
+                        "description": "Human-readable error message",
+                        "example": "Order price exceeds maximum allowed"
+                    }
+                }
+            },
+            "LastTradePriceResponse": {
+                "type": "object",
+                "description": "Get last trade price - GET /last-trade-price",
+                "required": [
+                    "price"
+                ],
+                "properties": {
+                    "price": {
+                        "type": "string"
+                    }
+                }
+            },
+            "MakerOrderInfo": {
+                "type": "object",
+                "description": "Polymarket-compatible maker order info (embedded in trades)",
+                "required": [
+                    "asset_id",
+                    "fee_rate_bps",
+                    "maker_address",
+                    "matched_amount",
+                    "order_id",
+                    "outcome",
+                    "owner",
+                    "price"
+                ],
+                "properties": {
+                    "asset_id": {
+                        "type": "string"
+                    },
+                    "fee_rate_bps": {
+                        "type": "string"
+                    },
+                    "maker_address": {
+                        "type": "string"
+                    },
+                    "matched_amount": {
+                        "type": "string"
+                    },
+                    "order_id": {
+                        "type": "string"
+                    },
+                    "outcome": {
+                        "type": "string"
+                    },
+                    "owner": {
+                        "type": "string"
+                    },
+                    "price": {
+                        "type": "string"
+                    }
+                }
+            },
+            "MarketInfo": {
+                "type": "object",
+                "required": [
+                    "id",
+                    "question",
+                    "symbol",
+                    "status",
+                    "condition_id",
+                    "yes_token_id",
+                    "no_token_id",
+                    "open_price",
+                    "open_time",
+                    "close_time"
+                ],
+                "properties": {
+                    "close_price": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "close_time": {
+                        "type": "string"
+                    },
+                    "condition_id": {
+                        "type": "string"
+                    },
+                    "id": {
+                        "type": "string"
+                    },
+                    "no_token_id": {
+                        "type": "string"
+                    },
+                    "open_price": {
+                        "type": "string"
+                    },
+                    "open_time": {
+                        "type": "string"
+                    },
+                    "outcome": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "question": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "symbol": {
+                        "type": "string"
+                    },
+                    "yes_token_id": {
+                        "type": "string"
+                    }
+                }
+            },
+            "MarketResponse": {
+                "type": "object",
+                "description": "Market summary information",
+                "required": [
+                    "condition_id",
+                    "yes_token_id",
+                    "no_token_id",
+                    "question",
+                    "status",
+                    "end_timestamp"
+                ],
+                "properties": {
+                    "condition_id": {
+                        "type": "string",
+                        "description": "Unique market identifier",
+                        "example": "0x1234..."
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Description with additional context",
+                        "nullable": true
+                    },
+                    "end_timestamp": {
+                        "type": "integer",
+                        "format": "int64",
+                        "description": "Resolution timestamp (Unix epoch)"
+                    },
+                    "no_token_id": {
+                        "type": "string",
+                        "description": "Token ID for NO shares",
+                        "example": "12345678901234567891"
+                    },
+                    "question": {
+                        "type": "string",
+                        "description": "Human-readable market question",
+                        "example": "Will BTC be above $100k on 2025-01-31?"
+                    },
+                    "status": {
+                        "type": "string",
+                        "description": "Market status (active, closed, resolved)",
+                        "example": "active"
+                    },
+                    "yes_token_id": {
+                        "type": "string",
+                        "description": "Token ID for YES shares",
+                        "example": "12345678901234567890"
+                    }
+                }
+            },
+            "MarketSummary": {
+                "type": "object",
+                "description": "Brief market summary for listings",
+                "required": [
+                    "condition_id",
+                    "question",
+                    "status",
+                    "yes_price",
+                    "no_price",
+                    "volume_24h"
+                ],
+                "properties": {
+                    "condition_id": {
+                        "type": "string"
+                    },
+                    "no_price": {
+                        "type": "string"
+                    },
+                    "question": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "volume_24h": {
+                        "type": "string"
+                    },
+                    "yes_price": {
+                        "type": "string"
+                    }
+                }
+            },
+            "MarketsResponse": {
+                "type": "object",
+                "description": "List markets - GET /markets",
+                "required": [
+                    "markets"
+                ],
+                "properties": {
+                    "markets": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/MarketInfo"
+                        }
+                    }
+                }
+            },
+            "MidpointResponse": {
+                "type": "object",
+                "description": "Get midpoint - GET /midpoint",
+                "required": [
+                    "mid"
+                ],
+                "properties": {
+                    "mid": {
+                        "type": "string"
+                    }
+                }
+            },
+            "OrderInfo": {
+                "type": "object",
+                "description": "Order info returned by /data/orders - matches Polymarket PolymarketOpenOrder format for Nautilus",
+                "required": [
+                    "id",
+                    "market",
+                    "maker_address",
+                    "owner",
+                    "side",
+                    "asset_id",
+                    "price",
+                    "original_size",
+                    "size_matched",
+                    "status",
+                    "outcome",
+                    "order_type",
+                    "created_at"
+                ],
+                "properties": {
+                    "asset_id": {
+                        "type": "string",
+                        "description": "Token ID as decimal string (for int() conversion)"
+                    },
+                    "associate_trades": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "Associate trades (list of trade IDs or null)",
+                        "nullable": true
+                    },
+                    "created_at": {
+                        "type": "integer",
+                        "format": "int64",
+                        "description": "Created at - epoch seconds (integer)"
+                    },
+                    "expiration": {
+                        "type": "string",
+                        "description": "Expiration timestamp in ms (as string or null) - must always be present",
+                        "nullable": true
+                    },
+                    "id": {
+                        "type": "string"
+                    },
+                    "maker_address": {
+                        "type": "string",
+                        "description": "Maker address (required by Nautilus)"
+                    },
+                    "market": {
+                        "type": "string",
+                        "description": "Market ID (UUID string)"
+                    },
+                    "order_hash": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "order_type": {
+                        "type": "string",
+                        "description": "Order type / time in force: \"GTC\", \"GTD\", \"FOK\", \"FAK\""
+                    },
+                    "original_size": {
+                        "type": "string"
+                    },
+                    "outcome": {
+                        "type": "string",
+                        "description": "Outcome: \"Yes\" or \"No\""
+                    },
+                    "owner": {
+                        "type": "string",
+                        "description": "Owner (api key/address)"
+                    },
+                    "price": {
+                        "type": "string",
+                        "description": "Price as decimal string"
+                    },
+                    "side": {
+                        "type": "string",
+                        "description": "\"BUY\" or \"SELL\" (uppercase)"
+                    },
+                    "size_matched": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string",
+                        "description": "Status in UPPERCASE for Nautilus Trader compatibility: LIVE, MATCHED, CANCELED, etc."
+                    }
+                }
+            },
+            "OrderResponse": {
+                "type": "object",
+                "description": "Order response",
+                "required": [
+                    "id",
+                    "condition_id",
+                    "token_id",
+                    "side",
+                    "original_size",
+                    "remaining_size",
+                    "price",
+                    "status",
+                    "created_at"
+                ],
+                "properties": {
+                    "condition_id": {
+                        "type": "string",
+                        "description": "Market condition ID"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "description": "Creation timestamp"
+                    },
+                    "id": {
+                        "type": "string",
+                        "description": "Order ID"
+                    },
+                    "original_size": {
+                        "type": "string",
+                        "description": "Original order size"
+                    },
+                    "price": {
+                        "type": "string",
+                        "description": "Limit price"
+                    },
+                    "remaining_size": {
+                        "type": "string",
+                        "description": "Remaining unfilled size"
+                    },
+                    "side": {
+                        "type": "string",
+                        "description": "Order side"
+                    },
+                    "status": {
+                        "$ref": "#/components/schemas/OrderStatus"
+                    },
+                    "token_id": {
+                        "type": "string",
+                        "description": "Token ID"
+                    }
+                }
+            },
+            "OrderSide": {
+                "type": "string",
+                "description": "Order side",
+                "enum": [
+                    "BUY",
+                    "SELL"
+                ]
+            },
+            "OrderStatus": {
+                "type": "string",
+                "description": "Order status",
+                "enum": [
+                    "pendingnew",
+                    "open",
+                    "partiallyfilled",
+                    "filled",
+                    "cancelled",
+                    "expired",
+                    "rejected"
+                ]
+            },
+            "OrderbookLevel": {
+                "type": "object",
+                "description": "Single orderbook price level",
+                "required": [
+                    "price",
+                    "size"
+                ],
+                "properties": {
+                    "price": {
+                        "type": "string",
+                        "description": "Price in USDC (6 decimals)",
+                        "example": "0.55"
+                    },
+                    "size": {
+                        "type": "string",
+                        "description": "Size at this price level",
+                        "example": "1000.00"
+                    }
+                }
+            },
+            "OrderbookResponse": {
+                "type": "object",
+                "description": "Orderbook snapshot response",
+                "required": [
+                    "condition_id",
+                    "token_id",
+                    "bids",
+                    "asks",
+                    "sequence",
+                    "timestamp"
+                ],
+                "properties": {
+                    "asks": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/OrderbookLevel"
+                        },
+                        "description": "Ask (sell) orders sorted by price ascending"
+                    },
+                    "bids": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/OrderbookLevel"
+                        },
+                        "description": "Bid (buy) orders sorted by price descending"
+                    },
+                    "condition_id": {
+                        "type": "string",
+                        "description": "Market condition ID"
+                    },
+                    "sequence": {
+                        "type": "integer",
+                        "format": "int64",
+                        "description": "Orderbook update sequence number",
+                        "minimum": 0
+                    },
+                    "timestamp": {
+                        "type": "integer",
+                        "format": "int64",
+                        "description": "Timestamp of snapshot"
+                    },
+                    "token_id": {
+                        "type": "string",
+                        "description": "Token ID this orderbook is for"
+                    }
+                }
+            },
+            "OrdersResponse": {
+                "type": "object",
+                "description": "Get user's open orders - GET /data/orders\nResponse format matches Polymarket py-clob-client expectations",
+                "required": [
+                    "data",
+                    "next_cursor"
+                ],
+                "properties": {
+                    "available_usdc": {
+                        "type": "string",
+                        "description": "Engine's available USDC after holds (defense-in-depth, also in wallet-status)",
+                        "nullable": true
+                    },
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/OrderInfo"
+                        },
+                        "description": "Array of order data (Polymarket uses 'data' not 'orders')"
+                    },
+                    "next_cursor": {
+                        "type": "string",
+                        "description": "Pagination cursor - \"LTE=\" means end of results (base64 \"-1\")"
+                    }
+                }
+            },
+            "PriceCandle": {
+                "type": "object",
+                "description": "OHLCV price candle",
+                "required": [
+                    "timestamp",
+                    "open",
+                    "high",
+                    "low",
+                    "close",
+                    "volume"
+                ],
+                "properties": {
+                    "close": {
+                        "type": "string",
+                        "description": "Closing price"
+                    },
+                    "high": {
+                        "type": "string",
+                        "description": "Highest price in period"
+                    },
+                    "low": {
+                        "type": "string",
+                        "description": "Lowest price in period"
+                    },
+                    "open": {
+                        "type": "string",
+                        "description": "Opening price"
+                    },
+                    "timestamp": {
+                        "type": "integer",
+                        "format": "int64",
+                        "description": "Candle open timestamp (Unix epoch)"
+                    },
+                    "volume": {
+                        "type": "string",
+                        "description": "Volume in period"
+                    }
+                }
+            },
+            "PriceHistoryResponse": {
+                "type": "object",
+                "description": "Price history response",
+                "required": [
+                    "condition_id",
+                    "token_id",
+                    "interval",
+                    "candles"
+                ],
+                "properties": {
+                    "candles": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/PriceCandle"
+                        }
+                    },
+                    "condition_id": {
+                        "type": "string"
+                    },
+                    "interval": {
+                        "type": "string"
+                    },
+                    "token_id": {
+                        "type": "string"
+                    }
+                }
+            },
+            "PriceLevel": {
+                "type": "object",
+                "required": [
+                    "price",
+                    "size"
+                ],
+                "properties": {
+                    "price": {
+                        "type": "string"
+                    },
+                    "size": {
+                        "type": "string"
+                    }
+                }
+            },
+            "PriceResponse": {
+                "type": "object",
+                "description": "Get price - GET /price",
+                "required": [
+                    "price"
+                ],
+                "properties": {
+                    "price": {
+                        "type": "string"
+                    }
+                }
+            },
+            "SpreadResponse": {
+                "type": "object",
+                "description": "Get spread - GET /spread",
+                "required": [
+                    "spread"
+                ],
+                "properties": {
+                    "spread": {
+                        "type": "string"
+                    }
+                }
+            },
+            "TickSizeResponse": {
+                "type": "object",
+                "required": [
+                    "minimum_tick_size",
+                    "minimum_order_size"
+                ],
+                "properties": {
+                    "minimum_order_size": {
+                        "type": "string"
+                    },
+                    "minimum_tick_size": {
+                        "type": "string"
+                    }
+                }
+            },
+            "TimeInForce": {
+                "type": "string",
+                "description": "Time in force options",
+                "enum": [
+                    "GTC",
+                    "IOC",
+                    "FOK"
+                ]
+            },
+            "TimeResponse": {
+                "type": "object",
+                "description": "Server time - GET /time",
+                "required": [
+                    "time"
+                ],
+                "properties": {
+                    "time": {
+                        "type": "integer",
+                        "format": "int64"
+                    }
+                }
+            },
+            "TradeInfo": {
+                "type": "object",
+                "description": "Polymarket-compatible trade info (PolymarketTradeReport format)\nRequired fields for Nautilus Trader: taker_order_id, maker_address, transaction_hash, maker_orders, trader_side",
+                "required": [
+                    "id",
+                    "asset_id",
+                    "price",
+                    "size",
+                    "side",
+                    "taker_order_id",
+                    "bucket_index",
+                    "fee_rate_bps",
+                    "market",
+                    "maker_address",
+                    "owner",
+                    "outcome",
+                    "match_time",
+                    "status",
+                    "last_update",
+                    "transaction_hash",
+                    "maker_orders",
+                    "trader_side"
+                ],
+                "properties": {
+                    "asset_id": {
+                        "type": "string",
+                        "description": "Polymarket uses asset_id, not market_id"
+                    },
+                    "bucket_index": {
+                        "type": "integer",
+                        "format": "int32",
+                        "description": "Bucket index (for fee calculations)"
+                    },
+                    "fee_rate_bps": {
+                        "type": "string",
+                        "description": "Fee rate in basis points (required by Nautilus)"
+                    },
+                    "id": {
+                        "type": "string"
+                    },
+                    "last_update": {
+                        "type": "string",
+                        "description": "Last update timestamp (required by Nautilus Trader)"
+                    },
+                    "maker_address": {
+                        "type": "string",
+                        "description": "Maker address (required by Nautilus)"
+                    },
+                    "maker_orders": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/MakerOrderInfo"
+                        },
+                        "description": "Maker orders (required by Nautilus)"
+                    },
+                    "market": {
+                        "type": "string",
+                        "description": "Market/condition ID"
+                    },
+                    "match_time": {
+                        "type": "string",
+                        "description": "Matched timestamp (epoch seconds as string)"
+                    },
+                    "outcome": {
+                        "type": "string",
+                        "description": "Outcome: \"Yes\" or \"No\""
+                    },
+                    "owner": {
+                        "type": "string",
+                        "description": "Owner address (the user's address)"
+                    },
+                    "price": {
+                        "type": "string"
+                    },
+                    "side": {
+                        "type": "string"
+                    },
+                    "size": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string",
+                        "description": "Trade status"
+                    },
+                    "taker_order_id": {
+                        "type": "string",
+                        "description": "Required by Nautilus - order ID of the taker"
+                    },
+                    "trader_side": {
+                        "type": "string",
+                        "description": "Trader side: \"MAKER\" or \"TAKER\" (required by Nautilus)"
+                    },
+                    "transaction_hash": {
+                        "type": "string",
+                        "description": "Transaction hash (required by Nautilus)"
+                    }
+                }
+            },
+            "TradeResponse": {
+                "type": "object",
+                "description": "Trade (fill) response",
+                "required": [
+                    "id",
+                    "order_id",
+                    "condition_id",
+                    "token_id",
+                    "side",
+                    "size",
+                    "price",
+                    "total",
+                    "timestamp"
+                ],
+                "properties": {
+                    "condition_id": {
+                        "type": "string",
+                        "description": "Market condition ID"
+                    },
+                    "id": {
+                        "type": "string",
+                        "description": "Trade ID"
+                    },
+                    "order_id": {
+                        "type": "string",
+                        "description": "Order ID that generated this trade"
+                    },
+                    "price": {
+                        "type": "string",
+                        "description": "Fill price"
+                    },
+                    "side": {
+                        "type": "string",
+                        "description": "Trade side"
+                    },
+                    "size": {
+                        "type": "string",
+                        "description": "Fill size"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "description": "Trade timestamp"
+                    },
+                    "token_id": {
+                        "type": "string",
+                        "description": "Token ID traded"
+                    },
+                    "total": {
+                        "type": "string",
+                        "description": "Total value (size * price)"
+                    }
+                }
+            },
+            "TradesResponse": {
+                "type": "object",
+                "description": "Get user's trades - GET /data/trades\nMatches Polymarket py-clob-client format (uses 'data' not 'trades')",
+                "required": [
+                    "data",
+                    "next_cursor"
+                ],
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/TradeInfo"
+                        },
+                        "description": "Array of trades (Polymarket uses 'data' not 'trades')"
+                    },
+                    "next_cursor": {
+                        "type": "string",
+                        "description": "Pagination cursor for next page (Polymarket compatibility)"
+                    }
+                }
+            },
+            "UnifiedBookResponse": {
+                "type": "object",
+                "description": "Unified orderbook response",
+                "required": [
+                    "market",
+                    "asset_id",
+                    "bids",
+                    "asks",
+                    "timestamp"
+                ],
+                "properties": {
+                    "asks": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/UnifiedPriceLevel"
+                        }
+                    },
+                    "asset_id": {
+                        "type": "string"
+                    },
+                    "best_ask": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "best_bid": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "bids": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/UnifiedPriceLevel"
+                        }
+                    },
+                    "market": {
+                        "type": "string"
+                    },
+                    "spread": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "timestamp": {
+                        "type": "string"
+                    }
+                }
+            },
+            "UnifiedPriceLevel": {
+                "type": "object",
+                "description": "Unified price level showing both direct and implied liquidity",
+                "required": [
+                    "price",
+                    "size",
+                    "direct_size",
+                    "implied_size",
+                    "order_count",
+                    "is_implied"
+                ],
+                "properties": {
+                    "direct_size": {
+                        "type": "string"
+                    },
+                    "implied_size": {
+                        "type": "string"
+                    },
+                    "implied_source": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "is_implied": {
+                        "type": "boolean"
+                    },
+                    "order_count": {
+                        "type": "integer",
+                        "format": "int32",
+                        "minimum": 0
+                    },
+                    "price": {
+                        "type": "string"
+                    },
+                    "size": {
+                        "type": "string"
+                    }
+                }
+            },
+            "WalletStatusResponse": {
+                "type": "object",
+                "required": [
+                    "usdc_balance",
+                    "usdc_allowance",
+                    "ctf_approved",
+                    "eth_balance"
+                ],
+                "properties": {
+                    "available_usdc": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "ctf_approved": {
+                        "type": "boolean"
+                    },
+                    "eth_balance": {
+                        "type": "string",
+                        "description": "ETH balance for gas (raw wei as string). Included so SDK consumers\nnever need direct RPC access for any balance check."
+                    },
+                    "usdc_allowance": {
+                        "type": "string"
+                    },
+                    "usdc_balance": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "securitySchemes": {
+            "api_key": {
+                "type": "apiKey",
+                "in": "header",
+                "name": "BLINK-API-KEY"
+            },
+            "hmac_signature": {
+                "type": "apiKey",
+                "in": "header",
+                "name": "BLINK-SIGNATURE"
+            }
+        }
+    },
+    "tags": [
+        {
+            "name": "health",
+            "description": "Health check endpoints"
+        },
+        {
+            "name": "markets",
+            "description": "Market discovery and information"
+        },
+        {
+            "name": "market-data",
+            "description": "Orderbook, price, and spread data"
+        },
+        {
+            "name": "trading",
+            "description": "Order placement, cancellation, and trade history"
+        },
+        {
+            "name": "account",
+            "description": "Wallet status, balances, and allowances"
+        },
+        {
+            "name": "auth",
+            "description": "API key creation and derivation (L1 EIP-712)"
+        },
+        {
+            "name": "orders",
+            "description": "Order management"
+        },
+        {
+            "name": "trades",
+            "description": "Trade history and fills"
+        },
+        {
+            "name": "users",
+            "description": "User account management"
+        },
+        {
+            "name": "faucet",
+            "description": "Testnet faucet and gasless relay endpoints"
+        },
+        {
+            "name": "admin",
+            "description": "Administrative endpoints (requires API key)"
+        },
+        {
+            "name": "compat",
+            "description": "Polymarket-compatible endpoints"
+        }
+    ]
+}

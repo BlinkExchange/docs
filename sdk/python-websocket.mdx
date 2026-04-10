@@ -1,0 +1,251 @@
+---
+title: "WebSocket Streams (Python)"
+description: "Real-time orderbook, trades, price ticks, and user events"
+---
+
+Blink provides three WebSocket channels for real-time data:
+
+| Channel | URL | Auth | Use Case |
+|---------|-----|------|----------|
+| Market | `/ws/market` | None | Orderbook snapshots, trades, market events |
+| Price | `/ws/price` | None | Pyth oracle price ticks |
+| User | `/ws/user` | API creds | Fills, cancels, balance updates |
+
+## Market WebSocket
+
+Subscribe to orderbook updates and trades for specific tokens:
+
+```python
+from py_blink_client import BlinkMarketWs
+
+def on_snapshot(msg):
+    """Full orderbook snapshot — sent on subscribe and periodically."""
+    print(f"Orderbook: {len(msg['bids'])} bids, {len(msg['asks'])} asks")
+    if msg['bids']:
+        print(f"  Best bid: {msg['bids'][0]['price']} x {msg['bids'][0]['size']}")
+    if msg['asks']:
+        print(f"  Best ask: {msg['asks'][0]['price']} x {msg['asks'][0]['size']}")
+
+def on_trade(msg):
+    """A trade was executed."""
+    print(f"Trade: {msg['side']} {msg['size']} @ {msg['price']}")
+
+def on_market_created(msg):
+    """A new market was created."""
+    print(f"Market created: {msg['market_id']}")
+
+def on_market_status(msg):
+    """Market status changed (resolved, halted, etc.)."""
+    print(f"Market {msg['market_id']}: {msg['status']}")
+
+ws = BlinkMarketWs("https://api.blink15.com")
+ws.on_snapshot = on_snapshot
+ws.on_trade = on_trade
+ws.on_market_created = on_market_created
+ws.on_market_status = on_market_status
+
+# Connect
+ws.start()
+
+# Subscribe to specific tokens
+ws.subscribe([yes_token_id, no_token_id])
+
+# Unsubscribe
+ws.unsubscribe([yes_token_id])
+
+# Disconnect
+ws.stop()
+```
+
+### Snapshot Format
+
+```json
+{
+  "type": "orderbook_snapshot",
+  "asset_id": "abc123...",
+  "bids": [
+    {"price": "0.55", "size": "150"},
+    {"price": "0.54", "size": "200"}
+  ],
+  "asks": [
+    {"price": "0.57", "size": "100"},
+    {"price": "0.58", "size": "175"}
+  ],
+  "timestamp": 1711929600
+}
+```
+
+### Gap Recovery
+
+If you suspect missed messages (e.g., after a network blip), request a fresh snapshot:
+
+```python
+ws.resync(yes_token_id)
+```
+
+## Price WebSocket
+
+Subscribe to Pyth oracle price ticks by stock symbol:
+
+```python
+from py_blink_client import BlinkPriceWs
+
+def on_tick(msg):
+    print(f"{msg['asset_id']}: ${msg['price']} (conf: {msg['confidence']})")
+
+ws = BlinkPriceWs("https://api.blink15.com")
+ws.on_price_tick = on_tick
+ws.start()
+
+# Subscribe by symbol name
+ws.subscribe(["BTCUSD", "ETHUSD", "SOLUSD"])
+```
+
+### Tick Format
+
+```json
+{
+  "type": "price_tick",
+  "asset_id": "BTCUSD",
+  "price": "227.45",
+  "confidence": "0.02",
+  "timestamp": 1711929600
+}
+```
+
+Price ticks arrive multiple times per second, 24/7.
+
+## User WebSocket
+
+Receive private events for your account — fills, cancellations, balance updates, and settlements:
+
+```python
+from py_blink_client import BlinkUserWs
+
+def on_order_fill(msg):
+    """An order was filled (partially or fully)."""
+    print(f"Fill: {msg['side']} {msg['filled_size']} @ {msg['price']}")
+    print(f"  Order: {msg['order_id']}, Remaining: {msg['size_remaining']}")
+
+def on_order_cancelled(msg):
+    """An order was cancelled."""
+    print(f"Cancelled: {msg['order_id']}")
+
+def on_balance(msg):
+    """USDC or token balance changed."""
+    print(f"Balance update: USDC {msg['usdc_balance']}")
+
+def on_settlement(msg):
+    """A trade was settled on-chain."""
+    print(f"Settled: {msg['tx_hash']}")
+
+ws = BlinkUserWs("https://api.blink15.com", creds)  # creds from client.create_or_derive_api_creds()
+ws.on_order_fill = on_order_fill
+ws.on_order_cancelled = on_order_cancelled
+ws.on_balance_update = on_balance
+ws.on_settlement = on_settlement
+ws.start()
+
+# User WS auto-subscribes to your account — no manual subscribe needed
+
+# Disconnect
+ws.stop()
+```
+
+### Authentication
+
+The User WebSocket authenticates using the same API credentials from `create_or_derive_api_creds()`:
+
+```python
+creds = client.create_or_derive_api_creds()
+
+ws = BlinkUserWs("https://api.blink15.com", creds)
+```
+
+The SDK sends the auth payload automatically on connection.
+
+### Fill Format
+
+```json
+{
+  "type": "order_fill",
+  "order_id": "uuid",
+  "asset_id": "abc123...",
+  "side": "BUY",
+  "price": "0.55",
+  "filled_size": "20",
+  "size_remaining": "80",
+  "timestamp": 1711929600
+}
+```
+
+## Auto-Reconnection
+
+All three WebSocket classes automatically reconnect on disconnection and re-subscribe to previously subscribed assets:
+
+```python
+# This "just works" — if the connection drops, it reconnects
+# and re-subscribes to all your tokens/symbols
+ws = BlinkMarketWs("https://api.blink15.com")
+ws.on_snapshot = on_snapshot
+ws.start()
+ws.subscribe([token_a, token_b])
+# If connection drops, it reconnects and re-subscribes to token_a and token_b
+```
+
+## Full Example: Live Trading Bot
+
+```python
+from py_blink_client import (
+    ClobClient, BlinkMarketWs, BlinkUserWs,
+    OrderArgs, Side
+)
+
+client = ClobClient(
+    host="https://api.blink15.com",
+    key="0xYOUR_KEY",
+)
+creds = client.create_or_derive_api_creds()
+
+# Track orderbook state
+best_bid = None
+best_ask = None
+
+def on_snapshot(msg):
+    global best_bid, best_ask
+    if msg['bids']:
+        best_bid = float(msg['bids'][0]['price'])
+    if msg['asks']:
+        best_ask = float(msg['asks'][0]['price'])
+    print(f"Book: {best_bid} / {best_ask}")
+
+def on_order_fill(msg):
+    print(f"FILLED: {msg['side']} {msg['filled_size']} @ {msg['price']}")
+
+# Start WebSockets
+market_ws = BlinkMarketWs("https://api.blink15.com")
+market_ws.on_snapshot = on_snapshot
+market_ws.start()
+
+user_ws = BlinkUserWs("https://api.blink15.com", creds)
+user_ws.on_order_fill = on_order_fill
+user_ws.start()
+
+# Subscribe to a market
+markets = client.get_markets()
+market = next(m for m in markets if m.status == "Active")
+market_ws.subscribe([market.yes_token_id])
+
+# Place orders based on live data
+import time
+time.sleep(2)  # wait for first snapshot
+
+if best_ask and best_ask < 0.55:
+    client.create_and_post_order(OrderArgs(
+        token_id=market.yes_token_id,
+        side=Side.BUY,
+        price=best_ask,
+        size=50,
+    ))
+    print(f"Bought 50 @ {best_ask}")
+```

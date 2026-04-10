@@ -1,0 +1,149 @@
+---
+title: "Quickstart"
+description: "Place your first prediction market trade in 5 minutes"
+---
+
+## 1. Install the SDK
+
+<CodeGroup>
+
+```bash Python
+pip install py-blink-client
+```
+
+```bash TypeScript
+npm install @blink/clob-client
+```
+
+</CodeGroup>
+
+## 2. Get Testnet USDC
+
+Every new wallet starts with zero balance. Claim free USDC from the testnet faucet:
+
+<CodeGroup>
+
+```python Python
+from py_blink_client import ClobClient
+
+client = ClobClient(host="https://api.blink15.com")
+result = client.claim_faucet("0xYourWalletAddress")
+print(f"Minted 100 USDC! TX: {result['tx_hash']}")
+```
+
+```bash cURL
+curl -X POST https://api.blink15.com/faucet/claim \
+  -H "Content-Type: application/json" \
+  -d '{"address": "0xYourWalletAddress"}'
+```
+
+</CodeGroup>
+
+## 3. Create API Credentials
+
+Trading requires HMAC credentials. Create them with your wallet's private key:
+
+```python
+from py_blink_client import ClobClient
+
+client = ClobClient(
+    host="https://api.blink15.com",
+    key="0xYOUR_PRIVATE_KEY",
+)
+
+creds = client.create_or_derive_api_creds()
+print(f"API Key: {creds.api_key}")
+print(f"Ready to trade!")
+```
+
+<Warning>
+Never share your private key. The SDK only uses it locally to sign the EIP-712 auth message. It is never sent to the server.
+</Warning>
+
+## 4. Find a Market
+
+Markets are time-windowed predictions on crypto prices. Find one that's currently active:
+
+```python
+markets = client.get_markets()
+active = [m for m in markets if m.status == "Active"]
+
+market = active[0]
+print(f"Symbol: {market.symbol}")
+print(f"Closes: {market.close_time}")
+print(f"YES token: {market.yes_token_id[:20]}...")
+print(f"NO token: {market.no_token_id[:20]}...")
+```
+
+Each market has two tokens:
+- **YES** (UP) — pays $1.00 if the price closes above the open price
+- **NO** (DOWN) — pays $1.00 if the price closes below the open price
+
+## 5. Check the Orderbook
+
+```python
+book = client.get_order_book(market.yes_token_id)
+
+print("--- YES/UP Orderbook ---")
+for bid in book["bids"][:3]:
+    print(f"  BID: {bid['price']} x {bid['size']}")
+for ask in book["asks"][:3]:
+    print(f"  ASK: {ask['price']} x {ask['size']}")
+```
+
+## 6. Place an Order
+
+Buy 20 UP contracts at 50 cents each ($10 total cost):
+
+```python
+from py_blink_client import OrderArgs, Side
+
+order = client.create_and_post_order(OrderArgs(
+    token_id=market.yes_token_id,
+    side=Side.BUY,
+    price=0.50,
+    size=20,
+))
+
+print(f"Order ID: {order['order_id']}")
+print(f"Status: {order['status']}")
+```
+
+<Info>
+Orders are fire-and-forget. The HTTP response returns immediately with `status: "pendingnew"`. Match results arrive via WebSocket.
+</Info>
+
+## 7. Check Your Orders
+
+```python
+orders = client.get_orders()
+for o in orders:
+    print(f"{o.side} {o.original_size} @ {o.price} — {o.status}")
+```
+
+## 8. Cancel an Order
+
+```python
+# Cancel one
+client.cancel(order["order_id"])
+
+# Cancel everything
+client.cancel_all()
+```
+
+## What's Next?
+
+<CardGroup cols={2}>
+  <Card title="Trading Guide" icon="arrows-rotate" href="/sdk/python-trading">
+    Batch orders, post-only, time-in-force
+  </Card>
+  <Card title="WebSocket Streams" icon="bolt" href="/sdk/python-websocket">
+    Real-time orderbook, fills, positions
+  </Card>
+  <Card title="Market Making" icon="chart-line" href="/guides/market-making">
+    Build a market maker with the GLFT model
+  </Card>
+  <Card title="Core Concepts" icon="book" href="/guides/concepts">
+    Markets, tokens, settlement, and auth
+  </Card>
+</CardGroup>

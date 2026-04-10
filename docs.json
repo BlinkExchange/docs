@@ -1,0 +1,64 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "maple",
+  "name": "Blink",
+  "colors": {
+    "primary": "#16A34A",
+    "light": "#22C55E",
+    "dark": "#15803D"
+  },
+  "favicon": "/favicon.svg",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Guides",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": ["index", "guides/quickstart", "guides/concepts"]
+          },
+          {
+            "group": "Python SDK",
+            "pages": ["sdk/python-quickstart", "sdk/python-trading", "sdk/python-websocket"]
+          },
+          {
+            "group": "TypeScript SDK",
+            "pages": ["sdk/typescript"]
+          },
+          {
+            "group": "Market Making",
+            "pages": ["guides/market-making", "guides/glft-model"]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "openapi": "openapi.json"
+      }
+    ]
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "App",
+        "href": "https://blink15.com"
+      }
+    ],
+    "primary": {
+      "type": "button",
+      "label": "Start Trading",
+      "href": "https://blink15.com/app"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/blink-markets"
+    }
+  },
+  "api": {
+    "baseUrl": "https://api.blink15.com",
+    "playground": {
+      "mode": "interactive"
+    }
+  }
+}

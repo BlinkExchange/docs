@@ -1,0 +1,310 @@
+---
+title: "TypeScript SDK"
+description: "Trade on Blink with @blink/clob-client"
+---
+
+## Installation
+
+```bash
+npm install @blink/clob-client
+```
+
+## Connect and Authenticate
+
+The `ClobClient` constructor takes positional arguments. You must create an ethers `Wallet`
+from your private key and pass it as the `signer` parameter.
+
+```typescript
+import { Wallet } from "@ethersproject/wallet";
+import { ClobClient, Chain } from "@blink/clob-client";
+
+const wallet = new Wallet("0xYOUR_PRIVATE_KEY");
+
+// Read-only client (market data only — no signer needed)
+const publicClient = new ClobClient("https://api.blink15.com", Chain.BASE_SEPOLIA);
+
+// Authenticated client
+const client = new ClobClient(
+  "https://api.blink15.com", // host
+  Chain.BASE_SEPOLIA,        // chainId
+  wallet,                    // signer
+);
+
+// Create API credentials (one-time) — returns { key, secret, passphrase }
+const creds = await client.createOrDeriveApiKey();
+console.log(`API Key: ${creds.key}`);
+
+// Re-create the client with credentials for L2-authenticated endpoints
+const authedClient = new ClobClient(
+  "https://api.blink15.com",
+  Chain.BASE_SEPOLIA,
+  wallet,
+  creds,
+);
+```
+
+<Info>
+Unlike the Python SDK (which auto-caches credentials), the TypeScript SDK requires you to create a new `ClobClient` instance with your credentials. The first client (with just the signer) is used for credential creation; the second (with signer + creds) is used for trading.
+</Info>
+
+## Place Orders
+
+`createOrder()` only **signs** the order locally and returns a `SignedOrder`. To sign and
+submit in one call, use `createAndPostOrder()`.
+
+```typescript
+import { Side, OrderType } from "@blink/clob-client";
+
+// Buy 20 UP contracts at $0.50 (signs + posts in one call)
+const result = await authedClient.createAndPostOrder({
+  tokenID: market.yes_token_id,
+  side: Side.BUY,
+  price: 0.50,
+  size: 20,
+});
+console.log(`Order ID: ${result.order_id}, status: ${result.status}`);
+
+// Sell with post-only (rejected if it would immediately match)
+await authedClient.createAndPostOrder(
+  {
+    tokenID: market.yes_token_id,
+    side: Side.SELL,
+    price: 0.70,
+    size: 50,
+  },
+  undefined,      // options (tick size, negRisk — auto-resolved)
+  OrderType.GTC,  // orderType
+  false,          // deferExec
+  true,           // postOnly
+);
+```
+
+If you need the two-step flow (sign locally, post separately):
+
+```typescript
+const signedOrder = await authedClient.createOrder({
+  tokenID: market.yes_token_id,
+  side: Side.BUY,
+  price: 0.48,
+  size: 100,
+});
+
+const response = await authedClient.postOrder(signedOrder, OrderType.GTC);
+```
+
+## Batch Orders
+
+There is no `createOrders()` method. Sign each order individually with `createOrder()`,
+then submit them all at once with `postOrders()`.
+
+```typescript
+import { OrderType } from "@blink/clob-client";
+
+const orderParams = [
+  { tokenID: yesToken, side: Side.BUY, price: 0.48, size: 50 },
+  { tokenID: yesToken, side: Side.BUY, price: 0.47, size: 50 },
+  { tokenID: yesToken, side: Side.BUY, price: 0.46, size: 50 },
+];
+
+// Sign each order
+const signedOrders = await Promise.all(
+  orderParams.map((params) => authedClient.createOrder(params)),
+);
+
+// Post all at once
+const results = await authedClient.postOrders(
+  signedOrders.map((order) => ({
+    order,
+    orderType: OrderType.GTC,
+  })),
+);
+
+console.log(`Placed ${results.length} orders`);
+```
+
+## Cancel Orders
+
+```typescript
+// Cancel one — pass an object with order_id
+await authedClient.cancelOrder({ order_id: "order-uuid" });
+
+// Cancel multiple by order hash
+await authedClient.cancelOrders(["hash-1", "hash-2"]);
+
+// Cancel all open orders for a market
+await authedClient.cancelMarketOrders({ market: conditionId });
+
+// Cancel all open orders
+await authedClient.cancelAll();
+```
+
+## Market Data
+
+```typescript
+// No auth needed for market data
+const client = new ClobClient("https://api.blink15.com", Chain.BASE_SEPOLIA);
+
+// getMarkets() returns a PaginationPayload with a .data array, not a flat array
+const marketsPage = await client.getMarkets();
+const markets = marketsPage.data;
+console.log(`Found ${marketsPage.count} markets`);
+
+// Orderbook (note: the method is getOrderBook, not getBook)
+const book = await client.getOrderBook(tokenID);
+console.log(`${book.bids.length} bids, ${book.asks.length} asks`);
+
+// Midpoint and spread
+const mid = await client.getMidpoint(tokenID);
+const spread = await client.getSpread(tokenID);
+
+// Last trade price
+const lastPrice = await client.getLastTradePrice(tokenID);
+
+// Price history
+const history = await client.getPricesHistory({
+  market: conditionId,
+  interval: "1d",
+});
+```
+
+## WebSocket
+
+WebSocket classes are `MarketWsClient` and `UserWsClient`. Use `.connect()` to open the
+connection and `.on("event_name", callback)` to register listeners.
+
+```typescript
+import WebSocket from "ws"; // Node.js only — omit in browser
+import { MarketWsClient, UserWsClient } from "@blink/clob-client";
+
+// ── Market (public) orderbook + trade streaming ──
+
+const marketWs = new MarketWsClient("https://api.blink15.com", {
+  WebSocketImpl: WebSocket, // omit in browser
+});
+
+marketWs.on("connected", () => {
+  console.log("Market WS connected");
+  marketWs.subscribe([yesTokenId]);
+});
+
+marketWs.on("orderbook_snapshot", (msg) => {
+  console.log(`Snapshot: ${msg.bids.length} bids, ${msg.asks.length} asks`);
+});
+
+marketWs.on("orderbook_delta", (msg) => {
+  console.log(`Delta: seq=${msg.sequence}`);
+});
+
+marketWs.on("trade", (msg) => {
+  console.log(`Trade: ${msg.side} ${msg.size} @ ${msg.price}`);
+});
+
+marketWs.connect();
+
+// ── User (authenticated) private event streaming ──
+
+const userWs = new UserWsClient("https://api.blink15.com", creds, {
+  WebSocketImpl: WebSocket,
+});
+
+userWs.on("authenticated", (msg) => {
+  console.log(`Authenticated as ${msg.address}`);
+});
+
+userWs.on("order_fill", (msg) => {
+  console.log(`Fill: ${msg.filled_size} @ ${msg.price}`);
+});
+
+userWs.on("settlement", (msg) => {
+  console.log(`Settled: trade=${msg.trade_id} tx=${msg.tx_hash}`);
+});
+
+userWs.on("balance_update", (msg) => {
+  console.log(`USDC balance: ${msg.usdc_balance}`);
+});
+
+userWs.connect();
+```
+
+### Market WS event types
+
+| Event | Description |
+|---|---|
+| `orderbook_snapshot` | Full book for a subscribed asset |
+| `orderbook_delta` | Incremental book update (check `sequence` for gaps) |
+| `trade` | Public trade execution |
+| `best_prices` | Best bid/ask update |
+| `market_created` | New market listed |
+| `market_status` | Market status change (active, halted, resolved) |
+
+### User WS event types
+
+| Event | Description |
+|---|---|
+| `authenticated` | Auth confirmed |
+| `order_accepted` | Your order was accepted into the book |
+| `order_fill` | Your order was (partially) filled |
+| `order_cancelled` | Your order was cancelled |
+| `order_rejected` | Your order was rejected (see `reason`) |
+| `settlement` | A trade was settled on-chain |
+| `position_update` | Your position balance changed |
+| `balance_update` | Your USDC balance changed |
+| `pnl_update` | Realized PnL updated |
+
+## Market Making Example
+
+```typescript
+import { Wallet } from "@ethersproject/wallet";
+import { ClobClient, Chain, Side, OrderType } from "@blink/clob-client";
+
+const wallet = new Wallet("0xYOUR_KEY");
+const client = new ClobClient("https://api.blink15.com", Chain.BASE_SEPOLIA, wallet);
+const creds = await client.createOrDeriveApiKey();
+const authedClient = new ClobClient(
+  "https://api.blink15.com",
+  Chain.BASE_SEPOLIA,
+  wallet,
+  creds,
+);
+
+// Find an active market
+const marketsPage = await authedClient.getMarkets();
+const market = (marketsPage.data as any[]).find(
+  (m) => m.status === "Active",
+)!;
+
+setInterval(async () => {
+  const mid = await authedClient.getMidpoint(market.yes_token_id);
+  const midPrice = parseFloat((mid as any).mid);
+  const halfSpread = 0.015;
+
+  // Cancel stale quotes
+  await authedClient.cancelAll();
+
+  // Sign both sides
+  const [bid, ask] = await Promise.all([
+    authedClient.createOrder({
+      tokenID: market.yes_token_id,
+      side: Side.BUY,
+      price: midPrice - halfSpread,
+      size: 50,
+    }),
+    authedClient.createOrder({
+      tokenID: market.yes_token_id,
+      side: Side.SELL,
+      price: midPrice + halfSpread,
+      size: 50,
+    }),
+  ]);
+
+  // Post both as a batch
+  await authedClient.postOrders([
+    { order: bid, orderType: OrderType.GTC },
+    { order: ask, orderType: OrderType.GTC },
+  ]);
+}, 5000);
+```
+
+<Info>
+The TypeScript SDK has the same API surface as the Python SDK. See the [Python Trading guide](/sdk/python-trading) for detailed documentation of each method -- the TypeScript equivalents use camelCase naming.
+</Info>

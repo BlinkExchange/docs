@@ -1,0 +1,196 @@
+---
+title: "GLFT Model"
+description: "Market making with the Guéant-Lehalle-Fernandez-Tapia optimal quoting model"
+---
+
+## Overview
+
+The GLFT model (Guéant, Lehalle & Fernandez-Tapia, 2013) solves the optimal market-making problem: how to set bid and ask prices that maximize expected profit while controlling inventory risk.
+
+The key insight is that optimal quotes depend on three factors:
+1. **Volatility** of the underlying asset
+2. **Your current inventory** (position risk)
+3. **Order arrival rate** (how often you get filled)
+
+## The Model
+
+The optimal bid and ask offsets from the fair price are:
+
+```
+reservation_price = mid - q * gamma * sigma^2 * T
+
+optimal_spread = gamma * sigma^2 * T + (2/gamma) * ln(1 + gamma/k)
+
+bid = reservation_price - optimal_spread / 2
+ask = reservation_price + optimal_spread / 2
+```
+
+Where:
+- `mid` = current fair price (midpoint)
+- `q` = current inventory (positive = long, negative = short)
+- `gamma` = risk aversion parameter (higher = wider spreads, less inventory risk)
+- `sigma` = volatility of the underlying asset
+- `T` = time remaining until market close
+- `k` = order arrival decay parameter (how quickly fill probability drops with quote distance from mid)
+
+<Note>
+These are the closed-form approximations from Avellaneda & Stoikov (2008). The full GLFT solution (Guéant, Lehalle & Fernandez-Tapia, 2013) uses a finite-horizon ODE with matrix exponential — see the TypeScript market maker implementation for the exact solver.
+</Note>
+
+## Implementation
+
+```python
+import math
+import time
+from py_blink_client import ClobClient, BlinkPriceWs, OrderArgs, Side
+
+client = ClobClient(
+    host="https://api.blink15.com",
+    key="0xYOUR_KEY",
+)
+client.create_or_derive_api_creds()
+
+# --- GLFT Parameters ---
+GAMMA = 0.1          # risk aversion (tune this)
+K = 1.5              # order arrival intensity (tune this)
+SIZE = 50            # contracts per side
+REFRESH_SEC = 3      # re-quote interval
+
+
+def estimate_volatility(price_history: list[float]) -> float:
+    """Estimate annualized volatility from recent price ticks."""
+    if len(price_history) < 10:
+        return 0.01  # default low volatility
+    returns = [
+        math.log(price_history[i] / price_history[i - 1])
+        for i in range(1, len(price_history))
+        if price_history[i - 1] > 0
+    ]
+    if not returns:
+        return 0.01
+    variance = sum(r * r for r in returns) / len(returns)
+    return math.sqrt(variance)
+
+
+def glft_quotes(mid: float, inventory: int, sigma: float, time_remaining: float) -> tuple[float, float]:
+    """Compute GLFT optimal bid and ask."""
+    T = max(time_remaining / 900, 0.001)  # normalize to [0, 1] over 15-min window
+
+    # Reservation price: skew away from inventory
+    reservation = mid - inventory * GAMMA * sigma**2 * T
+
+    # Optimal spread
+    spread = GAMMA * sigma**2 * T + (2 / GAMMA) * math.log(1 + GAMMA / K)
+
+    bid = round(reservation - spread / 2, 2)
+    ask = round(reservation + spread / 2, 2)
+
+    # Clamp to valid range
+    bid = max(0.01, min(0.99, bid))
+    ask = max(0.01, min(0.99, ask))
+
+    return bid, ask
+
+
+# --- Price tracking ---
+price_history = []
+
+def on_price_tick(msg):
+    price_history.append(float(msg['price']))
+    if len(price_history) > 500:
+        price_history.pop(0)
+
+price_ws = BlinkPriceWs("https://api.blink15.com")
+price_ws.on_price_tick = on_price_tick
+price_ws.start()
+price_ws.subscribe(["BTCUSD"])
+
+# --- Main loop ---
+markets = client.get_markets()
+market = next(m for m in markets if m.status == "Active")
+
+inventory = 0  # track from fills
+
+time.sleep(5)  # collect some price ticks
+
+while True:
+    mid = client.get_midpoint(market.yes_token_id)
+    mid_price = float(mid["mid"])
+
+    sigma = estimate_volatility(price_history)
+    time_remaining = (market.close_time - time.time())
+
+    if time_remaining <= 0:
+        print("Market closed, stopping")
+        break
+
+    bid, ask = glft_quotes(mid_price, inventory, sigma, time_remaining)
+
+    client.cancel_all()
+    client.create_and_post_orders([
+        OrderArgs(token_id=market.yes_token_id, side=Side.BUY, price=bid, size=SIZE),
+        OrderArgs(token_id=market.yes_token_id, side=Side.SELL, price=ask, size=SIZE),
+    ])
+
+    print(f"GLFT: {bid} / {ask} (mid={mid_price}, inv={inventory}, vol={sigma:.4f}, T={time_remaining:.0f}s)")
+    time.sleep(REFRESH_SEC)
+```
+
+## Parameter Tuning
+
+### Risk Aversion (gamma)
+
+| Gamma | Behavior | Best For |
+|-------|----------|----------|
+| 0.01 | Tight spreads, high fill rate, more inventory risk | High-volume, low-volatility markets |
+| 0.1 | Balanced spreads | General purpose |
+| 1.0 | Wide spreads, low fill rate, minimal inventory risk | High-volatility or uncertain markets |
+
+### Order Arrival Rate (k)
+
+Estimate from historical trade frequency. Higher `k` means tighter spreads are optimal (you'll get filled more often).
+
+```python
+# Estimate k from recent trades
+trades = client.get_user_trades("0xYourAddress")
+recent = [t for t in trades if t.timestamp > time.time() - 3600]
+k = len(recent) / 3600  # trades per second
+```
+
+### Volatility (sigma)
+
+Use Pyth oracle ticks for real-time volatility estimation:
+
+```python
+# Realized volatility from last N ticks
+sigma = estimate_volatility(price_history[-100:])
+```
+
+For prediction markets, the relevant volatility is in the **token price**, not just the underlying asset. Token prices near 0.50 are most volatile; near 0.01 or 0.99, they barely move.
+
+## Blink-Specific Considerations
+
+### Market Windows
+
+Markets have a defined close time. As `T` approaches 0:
+- **Spread widens** (higher uncertainty per unit time)
+- **Inventory skew increases** (more aggressive position reduction)
+
+This is correct behavior — you want to be flat when the market settles.
+
+### Binary Outcome
+
+Unlike continuous assets, prediction market tokens converge to 0 or 1 at expiry. The GLFT model's spread naturally accounts for this via the `T` term — as expiry approaches, the model quotes wider to reflect settlement risk.
+
+### MINT/MERGE Liquidity
+
+Blink supports cross-book matching via MINT and MERGE:
+- A BUY on YES + BUY on NO at combined price $1.00 creates new tokens (MINT)
+- A SELL on YES + SELL on NO burns tokens and returns $1.00 (MERGE)
+
+This means liquidity on one side implicitly creates liquidity on the other. Your quotes on YES affect NO book depth and vice versa.
+
+## References
+
+- Guéant, O., Lehalle, C.A., & Fernandez-Tapia, J. (2013). "Dealing with the Inventory Risk: A Solution to the Market Making Problem." *Mathematics and Financial Economics*, 7(4), 477-507.
+- Guéant, O. (2017). "Optimal Market Making." *Applied Mathematical Finance*, 24(2), 112-154.

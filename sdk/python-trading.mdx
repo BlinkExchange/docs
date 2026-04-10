@@ -1,0 +1,271 @@
+---
+title: "Trading (Python)"
+description: "Place orders, manage positions, and query market data with py-blink-client"
+---
+
+## Place an Order
+
+```python
+from py_blink_client import ClobClient, OrderArgs, Side
+
+client = ClobClient(
+    host="https://api.blink15.com",
+    key="0xYOUR_PRIVATE_KEY",
+)
+client.create_or_derive_api_creds()
+
+# Find an active market
+markets = client.get_markets()
+market = next(m for m in markets if m.status == "Active")
+
+# Buy 20 UP contracts at $0.50 each ($10 total)
+order = client.create_and_post_order(OrderArgs(
+    token_id=market.yes_token_id,
+    side=Side.BUY,
+    price=0.50,
+    size=20,
+))
+print(f"Order ID: {order['order_id']}")
+```
+
+### Two-Step Pattern (Sign then Submit)
+
+For advanced use cases (e.g., inspecting the signed order before submitting):
+
+```python
+# Step 1: Sign the order locally (no network call)
+signed_order = client.create_order(OrderArgs(
+    token_id=market.yes_token_id,
+    side=Side.BUY,
+    price=0.50,
+    size=20,
+))
+
+# Step 2: Submit the signed order to the exchange
+response = client.post_order(signed_order)
+print(f"Order ID: {response['order_id']}")
+```
+
+## Order Types
+
+```python
+from py_blink_client import OrderArgs, Side, OrderType
+
+# GTC — rests on the book until filled or cancelled (default)
+client.create_and_post_order(OrderArgs(
+    token_id=token_id,
+    side=Side.BUY,
+    price=0.50,
+    size=100,
+    order_type=OrderType.GTC,
+))
+
+# FOK — must fill entirely or is rejected
+client.create_and_post_order(OrderArgs(
+    token_id=token_id,
+    side=Side.BUY,
+    price=0.60,
+    size=50,
+    order_type=OrderType.FOK,
+))
+
+# FAK — fill what it can, cancel the rest (Fill-And-Kill)
+client.create_and_post_order(OrderArgs(
+    token_id=token_id,
+    side=Side.BUY,
+    price=0.55,
+    size=200,
+    order_type=OrderType.FAK,
+))
+```
+
+## Post-Only Orders
+
+Post-only orders are rejected if they would match immediately. Useful for market makers who want to provide liquidity without taking it.
+
+```python
+client.create_and_post_order(OrderArgs(
+    token_id=token_id,
+    side=Side.BUY,
+    price=0.45,
+    size=100,
+    post_only=True,
+))
+```
+
+## Batch Orders
+
+Submit up to 10 orders in a single request:
+
+```python
+orders = [
+    OrderArgs(token_id=yes_token, side=Side.BUY, price=0.48, size=50),
+    OrderArgs(token_id=yes_token, side=Side.BUY, price=0.47, size=50),
+    OrderArgs(token_id=yes_token, side=Side.BUY, price=0.46, size=50),
+    OrderArgs(token_id=no_token, side=Side.BUY, price=0.52, size=50),
+]
+
+# Convenience method — signs and submits all orders in one call
+result = client.create_and_post_orders(orders)
+print(f"Placed: {result['total_successful']}, Failed: {result['total_failed']}")
+
+# Alias: create_orders() does the same thing
+result = client.create_orders(orders)
+```
+
+## Cancel Orders
+
+```python
+# Cancel one
+client.cancel("order-uuid")
+
+# Cancel multiple
+client.cancel_orders(["uuid-1", "uuid-2", "uuid-3"])
+
+# Cancel all open orders
+client.cancel_all()
+```
+
+## Query Orders and Trades
+
+```python
+# Your open orders
+orders = client.get_orders()
+for o in orders:
+    print(f"{o.side} {o.price} x {o.size_remaining} — {o.status}")
+
+# Single order by ID
+order = client.get_order("order-uuid")
+
+# Your trade history
+trades = client.get_trades()
+
+# Filter orders
+filtered = client.list_orders(
+    market_id="market-uuid",
+    status="open",
+)
+```
+
+## Market Data
+
+All market data endpoints are public — no authentication required:
+
+```python
+client = ClobClient(host="https://api.blink15.com")  # no private key
+
+# Markets
+markets = client.get_markets()
+market = client.get_market("market-uuid")
+upcoming = client.get_markets_upcoming(limit=5)
+resolving = client.get_markets_resolving()
+
+# Orderbook
+book = client.get_order_book(token_id)
+unified = client.get_book_unified(token_id)  # includes implied liquidity
+
+# Prices
+mid = client.get_midpoint(token_id)
+spread = client.get_spread(token_id)
+last = client.get_last_trade_price(token_id)
+best_bid = client.get_price(token_id, "buy")
+best_ask = client.get_price(token_id, "sell")
+
+# Batch queries (efficient for multiple tokens)
+books = client.get_order_books([yes_token, no_token])
+mids = client.get_midpoints([yes_token, no_token])
+prices = client.get_prices([
+    {"token_id": yes_token, "side": "buy"},
+    {"token_id": no_token, "side": "sell"},
+])
+```
+
+## User Data
+
+User data is public (prediction markets are transparent):
+
+```python
+# Profile and stats
+profile = client.get_user_profile("0xAddress")
+
+# Activity feed
+activity = client.get_user_activity("0xAddress")
+
+# Open orders
+orders = client.get_user_orders("0xAddress")
+
+# Trade history
+trades = client.get_user_trades("0xAddress")
+
+# Token balances
+positions = client.get_user_positions("0xAddress")
+
+# Redemption history
+redemptions = client.get_user_redemptions("0xAddress")
+
+# On-chain events
+history = client.get_user_history("0xAddress")
+
+# Portfolio chart milestones
+portfolio = client.get_portfolio_history("0xAddress")
+```
+
+## Balance and Allowance
+
+```python
+# Check USDC balance and allowance
+balance = client.get_balance_allowance("COLLATERAL")
+print(f"USDC: {balance['balance']}")
+
+# Check conditional token balance and allowance
+ctf = client.get_balance_allowance("CONDITIONAL", token_id=token_id)
+print(f"CTF allowance: {ctf['allowance']}")
+
+# Quick wallet check (no auth)
+status = client.get_wallet_status("0xAddress")
+print(f"ETH: {status['eth_balance']}, USDC: {status['usdc_balance']}")
+```
+
+## Amount Encoding
+
+The SDK handles all amount conversions automatically. Pass human-readable numbers:
+
+| You Pass | SDK Converts | Meaning |
+|----------|-------------|---------|
+| `price=0.50` | 500,000 | 50 cents |
+| `size=20` | 20,000,000 | 20 contracts |
+| `price=0.65, size=100` | maker: 65,000,000 / taker: 100,000,000 | $65 for 100 contracts |
+
+All amounts use 6 decimal places internally (matching USDC's 6 decimals).
+
+## Full API Reference
+
+| Method | Endpoint | Auth |
+|--------|----------|------|
+| `get_markets()` | `GET /markets` | None |
+| `get_market(id)` | `GET /markets/:id` | None |
+| `get_markets_upcoming(limit)` | `GET /markets/upcoming` | None |
+| `get_markets_resolving()` | `GET /markets/resolving` | None |
+| `get_order_book(token_id)` | `GET /book` | None |
+| `get_book_unified(token_id)` | `GET /book/unified` | None |
+| `get_order_books(ids)` | `POST /books` | None |
+| `get_midpoint(token_id)` | `GET /midpoint` | None |
+| `get_midpoints(ids)` | `POST /midpoints` | None |
+| `get_price(token_id, side)` | `GET /price` | None |
+| `get_prices(reqs)` | `POST /prices` | None |
+| `get_spread(token_id)` | `GET /spread` | None |
+| `get_last_trade_price(token_id)` | `GET /last-trade-price` | None |
+| `get_tick_size(token_id)` | `GET /tick-size` | None |
+| `get_fee_rate(token_id)` | `GET /fee-rate` | None |
+| `get_price_ticks(symbol)` | `GET /ticks/:symbol` | None |
+| `get_wallet_status(addr)` | `GET /wallet-status` | None |
+| `create_and_post_order(args)` | `POST /order` | HMAC |
+| `create_and_post_orders(args_list)` | `POST /orders` | HMAC |
+| `cancel(id)` | `DELETE /order` | HMAC |
+| `cancel_orders(ids)` | `DELETE /orders` | HMAC |
+| `cancel_all()` | `DELETE /cancel-all` | HMAC |
+| `get_orders()` | `GET /data/orders` | HMAC |
+| `get_order(id)` | `GET /data/order/:id` | HMAC |
+| `get_trades()` | `GET /data/trades` | HMAC |
+| `get_balance_allowance(type)` | `GET /balance-allowance` | HMAC |
+| `list_orders(...)` | `GET /orders` | HMAC |

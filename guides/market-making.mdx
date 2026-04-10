@@ -1,0 +1,224 @@
+---
+title: "Market Making"
+description: "Build a market maker for Blink prediction markets"
+---
+
+## Overview
+
+Market makers provide liquidity by quoting both sides of a market. You profit from the bid-ask spread while taking on inventory risk. Blink's time-windowed markets and automatic settlement make this straightforward.
+
+## Basic Market Maker
+
+The simplest approach: quote both sides around the midpoint with a fixed spread.
+
+```python
+import time
+from py_blink_client import ClobClient, OrderArgs, Side
+
+client = ClobClient(
+    host="https://api.blink15.com",
+    key="0xYOUR_KEY",
+)
+client.create_or_derive_api_creds()
+
+# Find an active market
+markets = client.get_markets()
+market = next(m for m in markets if m.status == "Active")
+
+SPREAD = 0.04      # 4-cent spread
+SIZE = 50           # 50 contracts per side
+REFRESH_SEC = 5     # re-quote every 5 seconds
+
+while True:
+    mid = client.get_midpoint(market.yes_token_id)
+    mid_price = float(mid["mid"])
+
+    # Cancel stale orders
+    client.cancel_all()
+
+    # Quote both sides
+    bid = round(mid_price - SPREAD / 2, 2)
+    ask = round(mid_price + SPREAD / 2, 2)
+
+    # Clamp to valid range
+    bid = max(0.01, min(0.99, bid))
+    ask = max(0.01, min(0.99, ask))
+
+    orders = [
+        OrderArgs(token_id=market.yes_token_id, side=Side.BUY, price=bid, size=SIZE),
+        OrderArgs(token_id=market.yes_token_id, side=Side.SELL, price=ask, size=SIZE),
+    ]
+    client.create_and_post_orders(orders)
+    print(f"Quoting: {bid} / {ask} (mid={mid_price})")
+
+    time.sleep(REFRESH_SEC)
+```
+
+## Multi-Level Quoting
+
+Quote at multiple price levels to capture more volume:
+
+```python
+LEVELS = 3        # 3 levels per side
+LEVEL_GAP = 0.01  # 1 cent between levels
+SIZE_PER_LEVEL = 30
+
+orders = []
+for i in range(LEVELS):
+    offset = SPREAD / 2 + i * LEVEL_GAP
+    orders.append(OrderArgs(
+        token_id=token_id,
+        side=Side.BUY,
+        price=round(mid_price - offset, 2),
+        size=SIZE_PER_LEVEL,
+    ))
+    orders.append(OrderArgs(
+        token_id=token_id,
+        side=Side.SELL,
+        price=round(mid_price + offset, 2),
+        size=SIZE_PER_LEVEL,
+    ))
+
+client.create_and_post_orders(orders)  # up to 10 per batch
+```
+
+## Post-Only Orders
+
+Use `post_only=True` to ensure your orders always provide liquidity (never take). This prevents crossing the spread and guarantees you earn the spread on every fill.
+
+```python
+OrderArgs(
+    token_id=token_id,
+    side=Side.BUY,
+    price=bid,
+    size=SIZE,
+    post_only=True,  # rejected if it would match immediately
+)
+```
+
+## Diff-Based Order Management
+
+Instead of cancel-all + re-place (which causes orderbook flicker), compare desired orders against existing ones and only modify what changed:
+
+<Note>
+This is a simplified example. The TypeScript SDK's built-in `convergeOrders()` in the market maker handles additional concerns like token ID normalization and parallel execution.
+</Note>
+
+```python
+def converge_orders(client, desired_orders, tolerance=0.005):
+    """Only cancel/place orders that actually changed."""
+    existing = client.get_orders()
+
+    to_cancel = []
+    to_place = list(desired_orders)
+
+    for existing_order in existing:
+        # Find a matching desired order (within tolerance)
+        matched = False
+        for i, desired in enumerate(to_place):
+            if (desired.token_id == existing_order.token_id
+                and desired.side == existing_order.side
+                and abs(desired.price - float(existing_order.price)) < tolerance
+                and abs(desired.size - int(existing_order.size_remaining)) < tolerance * 100):
+                to_place.pop(i)  # already exists, keep it
+                matched = True
+                break
+        if not matched:
+            to_cancel.append(existing_order.id)
+
+    if to_cancel:
+        client.cancel_orders(to_cancel)
+    if to_place:
+        client.create_and_post_orders(to_place)
+```
+
+## Real-Time with WebSocket
+
+Use the Market WebSocket for live orderbook data instead of polling:
+
+```python
+from py_blink_client import BlinkMarketWs, BlinkUserWs
+
+best_bid = None
+best_ask = None
+inventory = 0  # net position
+
+def on_snapshot(msg):
+    global best_bid, best_ask
+    if msg['bids']:
+        best_bid = float(msg['bids'][0]['price'])
+    if msg['asks']:
+        best_ask = float(msg['asks'][0]['price'])
+
+def on_order_fill(msg):
+    global inventory
+    if msg['side'] == 'BUY':
+        inventory += int(msg['filled_size'])
+    else:
+        inventory -= int(msg['filled_size'])
+    print(f"Fill! Inventory: {inventory}")
+
+# Market data
+market_ws = BlinkMarketWs("https://api.blink15.com")
+market_ws.on_snapshot = on_snapshot
+market_ws.start()
+market_ws.subscribe([yes_token_id])
+
+# Private fills
+user_ws = BlinkUserWs("https://api.blink15.com", creds)
+user_ws.on_order_fill = on_order_fill
+user_ws.start()
+```
+
+## Risk Management
+
+### Inventory Skew
+
+Adjust quotes based on your position to reduce inventory risk:
+
+```python
+# Skew towards reducing inventory
+skew = inventory * 0.001  # 0.1 cent per contract
+bid = round(mid_price - SPREAD / 2 - skew, 2)
+ask = round(mid_price + SPREAD / 2 - skew, 2)
+```
+
+When you're long (positive inventory), the skew makes your ask cheaper to encourage sells. When short, it makes your bid more aggressive to encourage buys.
+
+### Time Decay
+
+As a market approaches its close time, widen the spread to account for increased uncertainty:
+
+```python
+import datetime
+
+time_remaining = (market.close_time - datetime.datetime.now()).total_seconds()
+time_factor = max(1.0, 900 / max(time_remaining, 1))  # wider as close approaches
+adjusted_spread = SPREAD * time_factor
+```
+
+### Position Limits
+
+Cap your maximum exposure per market:
+
+```python
+MAX_INVENTORY = 500  # max 500 contracts net
+
+if abs(inventory) >= MAX_INVENTORY:
+    # Only quote the side that reduces inventory
+    if inventory > 0:
+        orders = [OrderArgs(..., side=Side.SELL, ...)]
+    else:
+        orders = [OrderArgs(..., side=Side.BUY, ...)]
+```
+
+## What's Next
+
+<CardGroup cols={2}>
+  <Card title="GLFT Model" icon="chart-line" href="/guides/glft-model">
+    Advanced market making with the Guéant-Lehalle-Fernandez-Tapia model
+  </Card>
+  <Card title="WebSocket Streams" icon="bolt" href="/sdk/python-websocket">
+    Real-time data for your market maker
+  </Card>
+</CardGroup>

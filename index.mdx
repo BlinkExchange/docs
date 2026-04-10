@@ -1,0 +1,61 @@
+---
+title: "Blink Developer Docs"
+description: "Trade prediction markets on Base. Polymarket-compatible API."
+---
+
+# Welcome to Blink
+
+Blink is a prediction market exchange where you trade binary outcome tokens on crypto price movements. Markets run 24/7 with automatic resolution and settlement on Base, powered by Pyth oracle price feeds.
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/guides/quickstart">
+    Place your first trade in 5 minutes
+  </Card>
+  <Card title="Core Concepts" icon="book" href="/guides/concepts">
+    Markets, tokens, settlement, and auth
+  </Card>
+  <Card title="Python SDK" icon="python" href="/sdk/python-quickstart">
+    pip install py-blink-client
+  </Card>
+  <Card title="Market Making" icon="chart-line" href="/guides/market-making">
+    Run a market maker with the GLFT model
+  </Card>
+</CardGroup>
+
+## Why Blink?
+
+- **Polymarket-compatible API** — same HMAC auth, order format, and CLOB architecture
+- **24/7 binary markets** — UP/DOWN tokens on crypto assets, powered by Pyth oracles
+- **Automatic settlement** — on-chain via Base, no manual claims
+- **Zero fees** — no maker or taker fees during testnet
+- **Open SDKs** — Python and TypeScript clients, fully open source
+
+## Architecture
+
+```
+┌─────────────┐     ┌──────────────┐     ┌────────────┐
+│  Your Bot   │────▶│  Blink API   │────▶│  Matching  │
+│  (SDK)      │◀────│  (REST + WS) │◀────│  Engine    │
+└─────────────┘     └──────────────┘     └────────────┘
+                           │                    │
+                           ▼                    ▼
+                    ┌──────────────┐     ┌────────────┐
+                    │  Base Chain  │     │  Pyth      │
+                    │  (Settlement)│     │  (Prices)  │
+                    └──────────────┘     └────────────┘
+```
+
+## Contract Addresses (Base Sepolia Testnet)
+
+| Contract | Address |
+|----------|---------|
+| Exchange | `0x6Eb5B3a29A5f20a5Cfed228c96037abeFa0deA2d` |
+| USDC (Circle FiatToken) | `0x9f702fa37809C1cb4e023f78F801f180a1DF5C8E` |
+| CTF (Conditional Tokens) | `0x5baC724896651ee24465C7CA517722C4F644A09B` |
+| Chain ID | 84532 |
+
+## Get Help
+
+- **API Base URL**: `https://api.blink15.com`
+- **Swagger UI**: [api.blink15.com/swagger-ui](https://api.blink15.com/swagger-ui/)
+- **GitHub**: [github.com/blink-markets](https://github.com/blink-markets)
