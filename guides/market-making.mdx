@@ -101,7 +101,7 @@ OrderArgs(
 Instead of cancel-all + re-place (which causes orderbook flicker), compare desired orders against existing ones and only modify what changed:
 
 <Note>
-This is a simplified example. The TypeScript SDK's built-in `convergeOrders()` in the market maker handles additional concerns like token ID normalization and parallel execution.
+This is a simplified example. A production market maker would handle additional concerns like token ID normalization and parallel execution.
 </Note>
 
 ```python
