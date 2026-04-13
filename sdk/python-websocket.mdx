@@ -117,33 +117,37 @@ Price ticks arrive multiple times per second, 24/7.
 
 ## User WebSocket
 
-Receive private events for your account — fills, cancellations, balance updates, and settlements:
+Receive private events for your account through two unified callbacks:
+
+- **`on_state_changed`** — full snapshot of your USDC balance, positions, and open orders. Delivered after every mutation (fill, cancel, settlement, redemption).
+- **`on_notification`** — discrete events like fills, cancellations, and rejections with enriched data (market symbol, token type).
 
 ```python
 from py_blink_client import BlinkUserWs
 
-def on_order_fill(msg):
-    """An order was filled (partially or fully)."""
-    print(f"Fill: {msg['side']} {msg['filled_size']} @ {msg['price']}")
-    print(f"  Order: {msg['order_id']}, Remaining: {msg['size_remaining']}")
+def on_state(msg):
+    """Full user state snapshot — balance, positions, orders."""
+    print(f"USDC: {msg['usdc_balance']}, Available: {msg['available_usdc']}")
+    print(f"Positions: {len(msg['positions'])}, Orders: {len(msg['open_orders'])}")
+    for pos in msg['positions']:
+        print(f"  {pos['token_id'][:12]}.. balance={pos['balance']}")
 
-def on_order_cancelled(msg):
-    """An order was cancelled."""
-    print(f"Cancelled: {msg['order_id']}")
-
-def on_balance(msg):
-    """USDC or token balance changed."""
-    print(f"Balance update: USDC {msg['usdc_balance']}")
-
-def on_settlement(msg):
-    """A trade was settled on-chain."""
-    print(f"Settled: {msg['tx_hash']}")
+def on_notification(msg):
+    """Discrete event — fill, cancel, rejection, etc."""
+    kind = msg['kind']
+    data = msg['data']
+    if kind == 'order_fill':
+        print(f"Fill: {data['side']} {data['quantity']} @ {data['price']} ({data.get('symbol', '?')})")
+    elif kind == 'order_cancelled':
+        print(f"Cancelled: {data['order_id']}")
+    elif kind == 'order_rejected':
+        print(f"Rejected: {data['reason']}")
+    elif kind == 'order_accepted':
+        print(f"Accepted: {data['order_id']} {data['side']} @ {data['price']}")
 
 ws = BlinkUserWs("https://api.blink15.com", creds)  # creds from client.create_or_derive_api_creds()
-ws.on_order_fill = on_order_fill
-ws.on_order_cancelled = on_order_cancelled
-ws.on_balance_update = on_balance
-ws.on_settlement = on_settlement
+ws.on_state_changed = on_state
+ws.on_notification = on_notification
 ws.start()
 
 # User WS auto-subscribes to your account — no manual subscribe needed
@@ -164,20 +168,46 @@ ws = BlinkUserWs("https://api.blink15.com", creds)
 
 The SDK sends the auth payload automatically on connection.
 
-### Fill Format
+### State Changed Format
+
+Delivered on connect (auth snapshot) and after every user-affecting mutation:
 
 ```json
 {
-  "type": "order_fill",
-  "order_id": "uuid",
-  "asset_id": "abc123...",
-  "side": "BUY",
-  "price": "0.55",
-  "filled_size": "20",
-  "size_remaining": "80",
-  "timestamp": 1711929600
+  "type": "state_changed",
+  "usdc_balance": "125320000",
+  "available_usdc": "115320000",
+  "positions": [
+    {"token_id": "abc123...", "balance": "10000000", "avg_entry_price": "0.51"}
+  ],
+  "open_orders": [
+    {"order_id": "uuid", "market_id": "uuid", "side": "buy", "price": "0.45", "size": "20000000", "size_remaining": "20000000"}
+  ]
 }
 ```
+
+### Notification Format
+
+Discrete events with enriched data:
+
+```json
+{
+  "type": "notification",
+  "kind": "order_fill",
+  "data": {
+    "trade_id": "uuid",
+    "market_id": "uuid",
+    "symbol": "SPYX",
+    "token_type": "Up",
+    "side": "buy",
+    "price": "0.51",
+    "quantity": "19000000",
+    "usdc_amount": "9690000"
+  }
+}
+```
+
+Notification kinds: `order_fill`, `order_cancelled`, `order_accepted`, `order_rejected`.
 
 ## Auto-Reconnection
 
@@ -219,8 +249,13 @@ def on_snapshot(msg):
         best_ask = float(msg['asks'][0]['price'])
     print(f"Book: {best_bid} / {best_ask}")
 
-def on_order_fill(msg):
-    print(f"FILLED: {msg['side']} {msg['filled_size']} @ {msg['price']}")
+def on_notification(msg):
+    kind = msg['kind']
+    data = msg['data']
+    if kind == 'order_fill':
+        print(f"FILLED: {data['side']} {data['quantity']} @ {data['price']}")
+    elif kind == 'order_rejected':
+        print(f"REJECTED: {data['reason']}")
 
 # Start WebSockets
 market_ws = BlinkMarketWs("https://api.blink15.com")
@@ -228,7 +263,7 @@ market_ws.on_snapshot = on_snapshot
 market_ws.start()
 
 user_ws = BlinkUserWs("https://api.blink15.com", creds)
-user_ws.on_order_fill = on_order_fill
+user_ws.on_notification = on_notification
 user_ws.start()
 
 # Subscribe to a market
